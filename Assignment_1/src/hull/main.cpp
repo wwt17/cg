@@ -10,34 +10,49 @@
 typedef std::complex<double> Point;
 typedef std::vector<Point> Polygon;
 
+const double eps = 1e-7;
+
 double inline det(const Point &u, const Point &v) {
-	// TODO
-	return 0;
+	return u.real() * v.imag() - v.real() * u.imag();
 }
 
 struct Compare {
 	Point p0; // Leftmost point of the poly
 	bool operator ()(const Point &p1, const Point &p2) {
-		// TODO
-		return true;
+		Point v1 = p1 - p0, v2 = p2 - p0;
+		double d = det(v1, v2);
+		return (d > eps) || ((std::abs(d) <= eps) && (std::norm(v1) < std::norm(v2)));
 	}
 };
 
-bool inline salientAngle(Point &a, Point &b, Point &c) {
-	// TODO
-	return false;
+bool inline salientAngle(const Point &a, const Point &b, const Point &c) {
+	return det(b - a, c - a) > eps;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 Polygon convex_hull(std::vector<Point> &points) {
 	Compare order;
-	// TODO
-	order.p0 = Point(0, 0);
+	// find the leftmost point (e.g., smallest x; if there are many, find the one with smallest y)
+	order.p0 = points[0];
+	for (const Point& p: points) {
+		if ((p.real() < order.p0.real()) || ((p.real() == order.p0.real()) && p.imag() < order.p0.imag())) {
+			order.p0 = p;
+		}
+	}
 	std::sort(points.begin(), points.end(), order);
 	Polygon hull;
-	// TODO
-	// use salientAngle(a, b, c) here
+	hull.push_back(order.p0);
+	for (const Point& p: points) {
+		// skip p0
+		if (p == order.p0)
+			continue;
+
+		while ((int(hull.size()) >= 2) && ! salientAngle(hull[hull.size() - 2], hull[hull.size() - 1], p)) {
+			hull.pop_back();
+		}
+		hull.push_back(p);
+	}
 	return hull;
 }
 
@@ -46,7 +61,14 @@ Polygon convex_hull(std::vector<Point> &points) {
 std::vector<Point> load_xyz(const std::string &filename) {
 	std::vector<Point> points;
 	std::ifstream in(filename);
-	// TODO
+	int n;
+	in >> n;
+	points = std::vector<Point>(n);
+	for (Point& point: points) {
+		double x, y, z;
+		in >> x >> y >> z;
+		point = Point(x, y);
+	}
 	return points;
 }
 
@@ -59,8 +81,9 @@ void save_obj(const std::string &filename, Polygon &poly) {
 	for (const auto &v : poly) {
 		out << "v " << v.real() << ' ' << v.imag() << " 0\n";
 	}
+	out << "f";
 	for (size_t i = 0; i < poly.size(); ++i) {
-		out << "l " << i+1 << ' ' << 1+(i+1)%poly.size() << "\n";
+		out << ' ' << i+1;
 	}
 	out << std::endl;
 }
