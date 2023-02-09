@@ -17,6 +17,7 @@ using namespace Eigen;
 
 
 const double eps = 1e-7;
+const size_t H = 800, W = 800;
 
 template<class T>
 T sqr(const T x) {
@@ -25,6 +26,7 @@ T sqr(const T x) {
 
 
 enum ProjectionType {orthographic, perspective};
+const char *ProjectionTypeString[] = {"orthographic", "perspective"};
 
 
 class Object {
@@ -87,6 +89,8 @@ public:
 
 void raytrace(
 	const Object *object,
+	// RBGA Color (in [0, 1])
+	const Array4d color = Array4d(1, 1, 1, 1),
 	// Single light source
 	const Vector3d light_position = Vector3d(-1, 1, 1),
 	const double diffuse_weight = 1,
@@ -99,22 +103,28 @@ void raytrace(
 	const Vector3d perspective_position = Vector3d(0, 0, 2),
 	// Ray direction for orthographic projection
 	const Vector3d orthographic_direction = Vector3d(0, 0, -1),
+	// Image size (H, W)
+	const size_t H = 800,
+	const size_t W = 800,
 	// Output file
 	const std::string filename = "raytrace.png"
 ) {
-	MatrixXd C = MatrixXd::Zero(800,800); // Store the color
-	MatrixXd A = MatrixXd::Zero(800,800); // Store the alpha mask
+	MatrixXd
+		// brightness of color
+		C = MatrixXd::Zero(W, H),
+		// alpha mask
+		A = MatrixXd::Zero(W, H),
+		// diffuse and specular values
+		diffuse = MatrixXd::Zero(W, H),
+		specular = MatrixXd::Zero(W, H);
 
 	// The camera is perspective/orthographic, pointing in the direction -z and covering the unit square (-1,1) in x and y
 	Vector3d origin(-1, 1, 1);
-	Vector3d x_displacement(2.0/C.cols(),0,0);
-	Vector3d y_displacement(0,-2.0/C.rows(),0);
+	Vector3d x_displacement(2.0 / W, 0, 0);
+	Vector3d y_displacement(0, -2.0 / H, 0);
 
-	MatrixXd diffuse = MatrixXd::Zero(800, 800);
-	MatrixXd specular = MatrixXd::Zero(800, 800);
-
-	for (unsigned i=0; i < C.cols(); ++i) {
-		for (unsigned j=0; j < C.rows(); ++j) {
+	for (unsigned i=0; i < W; ++i) {
+		for (unsigned j=0; j < H; ++j) {
 			// Prepare the ray
 			Vector3d ray_origin = origin + double(i)*x_displacement + double(j)*y_displacement;
 			Vector3d ray_direction = projection_type == perspective
@@ -138,7 +148,7 @@ void raytrace(
 					specular(i,j) = pow(std::max(0., h.dot(ray_normal)), specular_power);
 				}
 
-				// Simple diffuse model
+				// Simple ambient + diffuse + specular model
 				C(i,j) = ambient + diffuse_weight * diffuse(i,j) + specular_weight * specular(i,j);
 
 				// Clamp to zero
@@ -151,106 +161,9 @@ void raytrace(
 	}
 
 	// Save to png
-	write_matrix_to_png(C,C,C,A,filename);
+	write_matrix_to_png(C * color(0), C * color(1), C * color(2), A * color(3), filename);
 }
 
-
-void raytrace_sphere(
-	const Sphere *sphere,
-	// Single light source
-	const Vector3d light_position = Vector3d(-1, 1, 1),
-	// Ray direction
-	const Vector3d orthographic_direction = Vector3d(0, 0, -1),
-	// Output file
-	const std::string filename = "sphere_orthographic.png"
-) {
-	std::cout << "Simple ray tracer, one sphere with orthographic projection" << std::endl;
-
-	raytrace(
-		sphere,
-		light_position,
-		1, 0, 0, 0,
-		orthographic,
-		Vector3d(0, 0, 1),
-		orthographic_direction,
-		filename
-	);
-}
-
-
-
-void raytrace_parallelogram(
-	// Parallelgram
-	const Parallelogram *pgram,
-	// Single light source
-	const Vector3d light_position = Vector3d(-1, 1, 1),
-	// Ray direction
-	const Vector3d orthographic_direction = Vector3d(0, 0, -1),
-	// Output file
-	const std::string filename = "plane_orthographic.png"
-) {
-	std::cout << "Simple ray tracer, one parallelogram with orthographic projection" << std::endl;
-
-	raytrace(
-		pgram,
-		light_position,
-		1, 0, 0, 0,
-		orthographic,
-		Vector3d(0, 0, 1),
-		orthographic_direction,
-		filename
-	);
-}
-
-void raytrace_perspective(
-	const Object *object,
-	// Single light source
-	const Vector3d light_position = Vector3d(-1, 1, 1),
-	// Perspective position
-	const Vector3d perspective_position = Vector3d(0, 0, 2),
-	// Output file
-	const std::string filename = "plane_perspective.png"
-) {
-	std::cout << "Simple ray tracer, one parallelogram with perspective projection" << std::endl;
-
-	raytrace(
-		object,
-		light_position,
-		1, 0, 0, 0,
-		perspective,
-		perspective_position,
-		Vector3d(0, 0, -1),
-		filename
-	);
-}
-
-void raytrace_shading(
-	const Object *object,
-	// Single light source
-	const Vector3d light_position = Vector3d(-1, 1, 1),
-	const double specular_power = 1000,
-	const double ambient = 0.1,
-	// Projection type
-	const ProjectionType projection_type = orthographic,
-	// Perspective position
-	const Vector3d perspective_position = Vector3d(0, 0, 2),
-	// Ray direction for orthographic projection
-	const Vector3d orthographic_direction = Vector3d(0, 0, -1),
-	// Output file
-	const std::string filename = "shading.png"
-) {
-	std::cout << "Simple ray tracer, one sphere with different shading" << std::endl;
-
-	raytrace(
-		object,
-		light_position,
-		1, 1, specular_power, ambient,
-		projection_type,
-		perspective_position,
-		orthographic_direction,
-		filename
-	);
-}
 
 int main() {
 	Sphere sphere(Vector3d(0, 0, 0), 0.9);
@@ -258,10 +171,50 @@ int main() {
 		Vector3d(-0.5, 0.6, -0.1),
 		Vector3d(0.6, -0.2, -0.2),
 		Vector3d(0.4, -0.5, -0.1));
-	raytrace_sphere(&sphere);
-	raytrace_parallelogram(&pgram);
-	raytrace_perspective(&pgram);
-	raytrace_shading(&sphere);
+
+	// RGBA Color
+	Array4d color(87/255., 6/255., 140/255., 1);
+	// Light source
+	Vector3d light_position(-1, 1, 1);
+	// Perspective position
+	Vector3d perspective_position(0, 0, 3);
+	// Ray direction for orthographic projection
+	Vector3d orthographic_direction(0, 0, -1);
+
+	Object *objects[2] = {&sphere, &pgram};
+	std::string object_names[2] = {"sphere", "parallelogram"};
+
+	for (ProjectionType projection: {orthographic, perspective}) {
+		const char *projection_string = ProjectionTypeString[projection];
+		for (int i = 0; i < 2; i++) {
+			std::cout << "Simple ray tracer, one " << object_names[i] << " with " << projection_string << " projection" << std::endl;
+			raytrace(
+				objects[i],
+				color,
+				light_position,
+				1, 0, 0, 0,
+				projection,
+				perspective_position,
+				orthographic_direction,
+				H, W,
+				object_names[i] + "_" + projection_string + ".png"
+			);
+
+			double specular_power = 1000, ambient = 0.1;
+			std::cout << "Simple ray tracer, one " << object_names[i] << " with " << projection_string << " and different shading" << std::endl;
+			raytrace(
+				objects[i],
+				color,
+				light_position,
+				1, 1, specular_power, ambient,
+				projection,
+				perspective_position,
+				orthographic_direction,
+				H, W,
+				object_names[i] + "_" + projection_string + "_shading.png"
+			);
+		}
+	}
 
 	return 0;
 }
