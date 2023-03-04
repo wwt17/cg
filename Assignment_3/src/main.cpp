@@ -177,26 +177,26 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
 
 // Function to linearly interpolate between a0 and a1
 // Weight w should be in the range [0.0, 1.0]
-double lerp(double a0, double a1, double w) {
+inline double lerp(const double a0, const double a1, const double w) {
     assert(w >= 0);
     assert(w <= 1);
-    //TODO implement linear and cubic interpolation
-    return 0;
+    return a0 + w * (a1 - a0);
 }
 
 // Computes the dot product of the distance and gradient vectors.
 double dotGridGradient(int ix, int iy, double x, double y) {
-    //TODO: Compute the distance vector
-    //TODO: Compute and return the dot-product
-    return 0;
+    // Compute the distance vector
+	Vector2d d(x - ix, y - iy);
+    // Compute and return the dot-product
+    return d.dot(grid[ix][iy]);
 }
 
 // Compute Perlin noise at coordinates x, y
 double perlin(double x, double y) {
-    //TODO: Determine grid cell coordinates x0, y0
-    int x0 = 0;
+    // Determine grid cell coordinates x0, y0
+    int x0 = int(x);
     int x1 = x0 + 1;
-    int y0 = 0;
+    int y0 = int(y);
     int y1 = y0 + 1;
 
     // Determine interpolation weights
@@ -218,20 +218,21 @@ double perlin(double x, double y) {
     return value;
 }
 
-Color procedural_texture(const double tu, const double tv) {
+Color procedural_texture(const double tu, const double tv, const bool use_perlin=true) {
     assert(tu >= 0);
     assert(tv >= 0);
 
     assert(tu <= 1);
     assert(tv <= 1);
 
-    //TODO: uncomment these lines once you implement the perlin noise
-    // const double color = (perlin(tu * grid_size, tv * grid_size) + 1) / 2;
-    // return Color(0, color, 0, 0);
-
-    //Example for checkerboard texture
-    const double color = (int(tu * grid_size) + int(tv * grid_size)) % 2 == 0 ? 0 : 1;
-    return Color(0, color, 0, 0);
+	double color;
+	if (use_perlin) {
+		color = (perlin(tu * grid_size, tv * grid_size) + 1) / 2;
+	}
+	else { // Example for checkerboard texture
+		color = (int(tu * grid_size) + int(tv * grid_size)) % 2;
+	}
+	return Color(0, color, 0, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
