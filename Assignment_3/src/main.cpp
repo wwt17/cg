@@ -54,6 +54,10 @@ public:
 		double delta = sqr(b_over_2) - a * c, t;
 		if (delta >= 0) {
 			t = (-b_over_2 - std::sqrt(delta)) / a;
+			if (t <= eps) {  // if the first intersection is at the back
+				// try the second intersection
+				t = (-b_over_2 + std::sqrt(delta)) / a;
+			}
 			ray_intersection = ray_origin + t * ray_direction;
 			ray_normal = (ray_intersection - center).normalized();
 			return t;
@@ -85,8 +89,6 @@ public:
 
 		// Compute normal
 		ray_normal = u.cross(v).normalized();
-		if ((ray_origin - ray_intersection).dot(ray_normal) < 0)
-			ray_normal = -ray_normal;
 
 		// Intersect if within the span of u and v and ray_direction is onto the plane
 		return coord(0) >= 0 && coord(0) <= 1 && coord(1) >= 0 && coord(1) <= 1 ? coord(2) : -inf;
@@ -167,7 +169,7 @@ void setup_scene() {
     spheres.emplace_back(Vector3d(-8, 1.6, 1), 1);
 
     //parallelograms
-	Vector3d pgram_origin(-100, -1.25, -100), pgram_A(100, 0, -100), pgram_B(-100, -1.2, 100);
+	Vector3d pgram_origin(-100, -1.25, -100), pgram_A(-100, -1.2, 100), pgram_B(100, 0, -100);
     parallelograms.emplace_back(pgram_origin, pgram_A - pgram_origin, pgram_B - pgram_origin);
 
     //Lights
@@ -373,9 +375,13 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
 		reflection_color = shoot_ray(p, ray_direction - 2. * ray_direction.dot(N) * N, max_bounce - 1).cwiseProduct(refl_color);
 	}
 
-    // TODO: Compute the color of the refracted ray and add its contribution to the current point color.
-    //       Make sure to check for total internal reflection before shooting a new ray.
+    // Compute the color of the refracted ray and add its contribution to the current point color.
+    // Make sure to check for total internal reflection before shooting a new ray.
     Color refraction_color(0, 0, 0, 0);
+	if (max_bounce > 0) {
+		// TODO
+		//refraction_color = 
+	}
 
     // Rendering equation
     Color C = ambient_color + lights_color + reflection_color + refraction_color;
