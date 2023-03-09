@@ -5,6 +5,8 @@
 #include <vector>
 #include <limits>
 #include <cmath>
+#include <cstdlib>
+#include <getopt.h>
 
 // Utilities for the Assignment
 #include "utils.h"
@@ -103,16 +105,15 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 // Scene setup, global variables
 ////////////////////////////////////////////////////////////////////////////////
-const std::string filename("raytrace.png");
+std::string filename("raytrace.png");
 
 //Camera settings
-const double focal_length = 10;
-const double field_of_view = pi / 4; //45 degrees
-const ProjectionType projection_type = perspective;
+double focal_length = 10;
+double field_of_view = pi / 4; // 45 degrees
 const Vector3d camera_position(0, 0, 5);
 
 //Maximum number of recursive calls
-const int max_bounce = 5;
+int max_bounce = 5;
 
 // Objects
 std::vector<Sphere> spheres;
@@ -122,12 +123,12 @@ std::vector<Parallelogram> parallelograms;
 const Color obj_ambient_color(0.5, 0.1, 0.1, 0);
 const Color obj_diffuse_color(0.5, 0.5, 0.5, 0);
 const Color obj_specular_color(0.2, 0.2, 0.2, 0);
-const double obj_specular_exponent = 256.0;
+double obj_specular_exponent = 256.0;
 const Color obj_reflection_color(0.7, 0.7, 0.7, 0);
 const Color obj_refraction_color(0.7, 0.7, 0.7, 0);
 
 // Precomputed (or otherwise) gradient vectors at each grid node
-const int grid_size = 20;
+int grid_size = 20;
 std::vector<std::vector<Vector2d>> grid;
 
 //Lights
@@ -377,10 +378,10 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
 
 void raytrace_scene(
 	// Projection type
-	const ProjectionType projection_type = projection_type,
+	const ProjectionType projection_type,
 	// Image size (h, w)
-	const size_t w = 800,
-	const size_t h = 400
+	const size_t w,
+	const size_t h
 ) {
     std::cout << "Simple ray tracer." << std::endl;
 
@@ -435,8 +436,68 @@ void raytrace_scene(
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
+	static struct option long_options[] = {
+		{"filename",              required_argument, 0, 0  },
+		{"focal_length",          required_argument, 0, 'f'},
+		{"field_of_view",         required_argument, 0, 1  },
+		{"projection_type",       required_argument, 0, 'p'},
+		{"obj_specular_exponent", required_argument, 0, 2  },
+		{"max_bounce",            required_argument, 0, 'b'},
+		{"grid_size",             required_argument, 0, 'g'},
+		{0,                       0,                 0, 0  }
+	};
+
+	size_t w = 800, h = 400;
+	ProjectionType projection_type = perspective;
+
+	int opt;
+	while ((opt = getopt_long(argc, argv, "w:h:f:p:b:g:", long_options, NULL)) != -1) {
+		switch (opt) {
+		case 0:
+			filename = optarg;
+			break;
+		case 1:
+			field_of_view = pi / 180 * atoi(optarg); // field of view in degree
+			break;
+		case 2:
+			obj_specular_exponent = atof(optarg);
+			break;
+		case 'w':
+			w = atoi(optarg);
+			break;
+		case 'h':
+			h = atoi(optarg);
+			break;
+		case 'f':
+			focal_length = atof(optarg);
+			break;
+		case 'p':
+			if (optarg[0] == 'p') {
+				projection_type = perspective;
+			}
+			else if (optarg[0] == 'o') {
+				projection_type = orthographic;
+			}
+			else {
+				std::cerr << "Unknown projection type: " << optarg << std::endl;
+				exit(EXIT_FAILURE);
+			}
+			break;
+		case 'b':
+			max_bounce = atoi(optarg);
+			break;
+		case 'g':
+			grid_size = atoi(optarg);
+			break;
+		default: // '?'
+			std::cerr << "Read the code for usage." << std::endl;
+			exit(EXIT_FAILURE);
+		}
+	}
+
     setup_scene();
 
-    raytrace_scene();
+    raytrace_scene(projection_type, w, h);
+
     return 0;
 }
