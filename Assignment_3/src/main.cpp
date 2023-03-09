@@ -6,6 +6,7 @@
 #include <limits>
 #include <cmath>
 #include <cstdlib>
+#include <random>
 #include <getopt.h>
 
 // Utilities for the Assignment
@@ -102,18 +103,29 @@ public:
 };
 
 
+std::random_device rd;
+std::mt19937 gen(rd());
+
+
+class Sampler {
+public:
+	double stddev;
+	Sampler(const double stddev): stddev(stddev) {
+	}
+	Vector3d operator ()(const Vector3d &camera_position) const {
+		if (stddev <= 0)
+			return camera_position;
+
+		std::normal_distribution<> d(0., stddev);
+		const Vector3d deviation(d(gen), d(gen), 0);
+		return camera_position + deviation;
+	}
+};
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Scene setup, global variables
 ////////////////////////////////////////////////////////////////////////////////
-std::string filename("raytrace.png");
-
-//Camera settings
-double focal_length = 10;
-double field_of_view = pi / 4; // 45 degrees
-const Vector3d camera_position(0, 0, 5);
-
-//Maximum number of recursive calls
-int max_bounce = 5;
 
 // Objects
 std::vector<Sphere> spheres;
@@ -377,11 +389,20 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
 ////////////////////////////////////////////////////////////////////////////////
 
 void raytrace_scene(
-	// Projection type
-	const ProjectionType projection_type,
+	// Camera settings
+	Vector3d camera_position,
+	ProjectionType projection_type,
+	double focal_length,
+	double field_of_view,
 	// Image size (h, w)
 	const size_t w,
-	const size_t h
+	const size_t h,
+	//Maximum number of recursive calls
+	int max_bounce,
+	// Sample the deviation from the camera position
+	const Sampler sampler,
+	const unsigned n_sample,
+	const std::string filename
 ) {
     std::cout << "Simple ray tracer." << std::endl;
 
@@ -404,25 +425,29 @@ void raytrace_scene(
 
     for (unsigned i = 0; i < w; ++i)
         for (unsigned j = 0; j < h; ++j) {
-            // TODO: Implement depth of field
             const Vector3d pixel_center = image_origin + (i + 0.5) * x_displacement + (j + 0.5) * y_displacement;
 
             // Prepare the ray
             Vector3d ray_origin;
-            Vector3d ray_direction;
 
-            if (projection_type == perspective) {
-                // Perspective camera
+            if (projection_type == perspective) {  // Perspective camera
 				ray_origin = camera_position;
-				ray_direction = (pixel_center - camera_position).normalized();
             }
-            else if (projection_type == orthographic) {
-                // Orthographic camera
+            else if (projection_type == orthographic) {  // Orthographic camera
                 ray_origin = camera_position + Vector3d(pixel_center[0], pixel_center[1], 0);
-                ray_direction = Vector3d(0, 0, -1);
             }
 
-            const Color C = shoot_ray(ray_origin, ray_direction, max_bounce);
+            // Implement depth of field
+			// Sample multiple ray origins and average the colors
+            Color C(0, 0, 0, 0);
+			for (unsigned i_sample = 0; i_sample < n_sample; ++i_sample) {
+				Vector3d ray_origin_sample = sampler(ray_origin);
+				Vector3d ray_direction = (pixel_center - ray_origin_sample).normalized();
+				Color sample_color = shoot_ray(ray_origin_sample, ray_direction, max_bounce);
+				C += sample_color;
+			}
+			C /= n_sample;
+
             R(i, j) = C(0);
             G(i, j) = C(1);
             B(i, j) = C(2);
@@ -444,11 +469,23 @@ int main(int argc, char *argv[]) {
 		{"obj_specular_exponent", required_argument, 0, 2  },
 		{"max_bounce",            required_argument, 0, 'b'},
 		{"grid_size",             required_argument, 0, 'g'},
+		{"stddev",                required_argument, 0, 3  },
+		{"n_sample",              required_argument, 0, 4  },
 		{0,                       0,                 0, 0  }
 	};
 
-	size_t w = 800, h = 400;
+	//Camera settings
+	const Vector3d camera_position(0, 0, 5);
 	ProjectionType projection_type = perspective;
+	double focal_length = 10;
+	double field_of_view = pi / 4; // 45 degrees
+	size_t w = 800, h = 400;
+	//Maximum number of recursive calls
+	int max_bounce = 5;
+	//Sample
+	Sampler sampler(0);
+	unsigned n_sample = 1;
+	std::string filename("raytrace.png");
 
 	int opt;
 	while ((opt = getopt_long(argc, argv, "w:h:f:p:b:g:", long_options, NULL)) != -1) {
@@ -461,6 +498,12 @@ int main(int argc, char *argv[]) {
 			break;
 		case 2:
 			obj_specular_exponent = atof(optarg);
+			break;
+		case 3:
+			sampler = Sampler(atof(optarg));
+			break;
+		case 4:
+			n_sample = atoi(optarg);
 			break;
 		case 'w':
 			w = atoi(optarg);
@@ -497,7 +540,15 @@ int main(int argc, char *argv[]) {
 
     setup_scene();
 
-    raytrace_scene(projection_type, w, h);
+    raytrace_scene(
+		camera_position,
+		projection_type,
+		focal_length,
+		field_of_view,
+		w, h,
+		max_bounce,
+		sampler, n_sample,
+		filename);
 
     return 0;
 }
