@@ -420,22 +420,30 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
         lights_color += (diffuse_weight * diffuse + specular_weight * specular).cwiseProduct(light.color) / D.squaredNorm() * (is_reflection ? reflectance : 1 - reflectance);
     }
 
-    Color refl_color = obj_reflection_color;
+    Color refl_color = obj_reflection_color,
+	      refr_color = obj_refraction_color;
     if (nearest_object == 4) {
         refl_color = Color(0.5, 0.5, 0.5, 0);
+        refr_color = Color(0.5, 0.5, 0.5, 0);
     }
-    // Compute the color of the reflected ray and add its contribution to the current point color.
+    // Compute the colors of the reflected and refracted ray and add their contribution to the current point color.
     // use refl_color
-    Color reflection_color(0, 0, 0, 0);
+    Color reflection_color(0, 0, 0, 0),
+          refraction_color(0, 0, 0, 0);
 	if (max_bounce > 0) {
 		reflection_color = shoot_ray(p, ray_direction - 2. * ray_direction.dot(N) * N, max_bounce - 1).cwiseProduct(refl_color);
-	}
 
-    // Compute the color of the refracted ray and add its contribution to the current point color.
-    // Make sure to check for total internal reflection before shooting a new ray.
-    Color refraction_color(0, 0, 0, 0);
-	if (max_bounce > 0) {
-		//refraction_color = 
+		double cos_theta_1, sin_theta_1, cos_theta_2, sin_theta_2;
+		const double reflectance = refract(N, -ray_direction, cos_theta_1, sin_theta_1, cos_theta_2, sin_theta_2);
+		if ((sin_theta_2 < 1) && (reflectance < 1)) {
+			Vector3d N_T = (-ray_direction).cross(N).cross(N);
+			if (N_T.norm() != 0)
+				N_T.normalize();
+			const Vector3d refracted_ray_direction = sin_theta_2 * N_T + cos_theta_2 * N;
+			refraction_color = shoot_ray(p, refracted_ray_direction, max_bounce - 1).cwiseProduct(refr_color);
+		}
+		reflection_color *= reflectance;
+		refraction_color *= 1 - reflectance;
 	}
 
     // Rendering equation
