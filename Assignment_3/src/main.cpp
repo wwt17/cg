@@ -315,6 +315,43 @@ bool is_light_visible(const Vector3d &ray_origin, const Vector3d &ray_direction,
 		return nearest.second >= (light_position - ray_origin).norm(); // The reached point is farther than the light
 }
 
+inline double refract(
+	const Vector3d &N,   // norm. points out.
+	const Vector3d &l,   // the light or view vector; these two cases are the same
+	// See the figure in the README
+	double &cos_theta_1,
+	double &sin_theta_1,
+	double &cos_theta_2,
+	double &sin_theta_2
+) { // Compute refraction, put computed things in the references, and return reflectance
+	cos_theta_1 = std::max(-1., std::min(1., l.dot(N)));
+	const bool out_light = cos_theta_1 >= 0;
+	double eta_1, eta_2;
+	if (out_light) {
+		eta_1 = eta_0;
+		eta_2 = eta;
+	}
+	else {
+		eta_1 = eta;
+		eta_2 = eta_0;
+	}
+	sin_theta_1 = sqrt(1 - sqr(cos_theta_1));
+	sin_theta_2 = eta_1 / eta_2 * sin_theta_1;  // Snell-Descartes law
+	double reflectance;
+	if (sin_theta_2 >= 1) {  // total internal reflection
+		reflectance = 1;
+	}
+	else {
+		cos_theta_2 = (out_light ? 1 : -1) * sqrt(1 - sqr(sin_theta_2));  // make it having the same sign as cos_theta_1
+		// Fresnel equations
+		const double reflectance_s = sqr((eta_1 * cos_theta_1 - eta_2 * cos_theta_2) / (eta_1 * cos_theta_1 + eta_2 * cos_theta_2)),
+					 reflectance_p = sqr((eta_1 * cos_theta_2 - eta_2 * cos_theta_1) / (eta_1 * cos_theta_2 + eta_2 * cos_theta_1));
+		reflectance = s_fraction * reflectance_s + (1 - s_fraction) * reflectance_p;
+		cos_theta_2 *= -1;  // flip the sign
+	}
+	return reflectance;
+}
+
 Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int max_bounce) {
     //Intersection point and normal, these are output of find_nearest_object
     Vector3d p, N;
@@ -356,36 +393,15 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
         // shading parameters
 		const double diffuse_weight = 1, specular_weight = 1;
 
-		// Refraction of the light
-		// norm N points out
-		const double cos_theta_1 = std::max(-1., std::min(1., Li.dot(N)));
+		double cos_theta_1, sin_theta_1, cos_theta_2, sin_theta_2;
+		const double reflectance = refract(N, Li, cos_theta_1, sin_theta_1, cos_theta_2, sin_theta_2);
 		const bool out_light = cos_theta_1 >= 0;
-		double eta_1, eta_2;
-		if (out_light) {
-			eta_1 = eta_0;
-			eta_2 = eta;
-		}
-		else {
-			eta_1 = eta;
-			eta_2 = eta_0;
-		}
-		const double sin_theta_1 = sqrt(1 - sqr(cos_theta_1));
-		const double sin_theta_2 = eta_1 / eta_2 * sin_theta_1;  // Snell-Descartes law
-		double reflectance;
 		Vector3d Li_refracted_flipped;
-		if (sin_theta_2 >= 1) {  // total internal reflection
-			reflectance = 1;
-		}
-		else {
-			const double cos_theta_2 = (out_light ? 1 : -1) * sqrt(1 - sqr(sin_theta_2));
+		if (sin_theta_2 < 1) {
 			Vector3d N_T = Li.cross(N).cross(N);
 			if (N_T.norm() != 0)
 				N_T.normalize();
-			Li_refracted_flipped = -sin_theta_2 * N_T + cos_theta_2 * -N;
-			// Fresnel equations
-			const double reflectance_s = sqr((eta_1 * cos_theta_1 - eta_2 * cos_theta_2) / (eta_1 * cos_theta_1 + eta_2 * cos_theta_2)),
-			             reflectance_p = sqr((eta_1 * cos_theta_2 - eta_2 * cos_theta_1) / (eta_1 * cos_theta_2 + eta_2 * cos_theta_1));
-			reflectance = s_fraction * reflectance_s + (1 - s_fraction) * reflectance_p;
+			Li_refracted_flipped = -sin_theta_2 * N_T + cos_theta_2 * N;
 		}
 
 		const Vector3d v = -ray_direction.normalized();
