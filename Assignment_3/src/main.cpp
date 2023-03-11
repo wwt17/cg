@@ -138,6 +138,10 @@ const Color obj_ambient_color(0.5, 0.1, 0.1, 0);
 const Color obj_diffuse_color(0.5, 0.5, 0.5, 0);
 const Color obj_specular_color(0.2, 0.2, 0.2, 0);
 double obj_specular_exponent = 256.0;
+// refractive indexes
+const double eta_0 = 1;  // air
+double eta = 1e18;       // object; very large value for no refraction
+double s_fraction = 1;  // fraction of s-polarized light (in s-polarized and p-polarized light)
 const Color obj_reflection_color(0.7, 0.7, 0.7, 0);
 const Color obj_refraction_color(0.7, 0.7, 0.7, 0);
 
@@ -352,16 +356,52 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
         // shading parameters
 		const double diffuse_weight = 1, specular_weight = 1;
 
-        // Diffuse contribution
-        const Color diffuse = diff_color * std::max(Li.dot(N), 0.0);
+		// Refraction of the light
+		// norm N points out
+		const double cos_theta_1 = std::max(-1., std::min(1., Li.dot(N)));
+		const bool out_light = cos_theta_1 >= 0;
+		double eta_1, eta_2;
+		if (out_light) {
+			eta_1 = eta_0;
+			eta_2 = eta;
+		}
+		else {
+			eta_1 = eta;
+			eta_2 = eta_0;
+		}
+		const double sin_theta_1 = sqrt(1 - sqr(cos_theta_1));
+		const double sin_theta_2 = eta_1 / eta_2 * sin_theta_1;  // Snell-Descartes law
+		double reflectance;
+		Vector3d Li_refracted_flipped;
+		if (sin_theta_2 >= 1) {  // total internal reflection
+			reflectance = 1;
+		}
+		else {
+			const double cos_theta_2 = (out_light ? 1 : -1) * sqrt(1 - sqr(sin_theta_2));
+			Vector3d N_T = Li.cross(N).cross(N);
+			if (N_T.norm() != 0)
+				N_T.normalize();
+			Li_refracted_flipped = -sin_theta_2 * N_T + cos_theta_2 * -N;
+			// Fresnel equations
+			const double reflectance_s = sqr((eta_1 * cos_theta_1 - eta_2 * cos_theta_2) / (eta_1 * cos_theta_1 + eta_2 * cos_theta_2)),
+			             reflectance_p = sqr((eta_1 * cos_theta_2 - eta_2 * cos_theta_1) / (eta_1 * cos_theta_2 + eta_2 * cos_theta_1));
+			reflectance = s_fraction * reflectance_s + (1 - s_fraction) * reflectance_p;
+		}
 
-        // Specular contribution
-		const Vector3d v = (ray_origin - p).normalized();
-		const Vector3d h = (v + Li).normalized();
-        const Color specular = pow(std::max(0., h.dot(N)), obj_specular_exponent) * obj_specular_color;
+		const Vector3d v = -ray_direction.normalized();
+		const bool out_view = v.dot(N) >= 0;
+		const bool is_reflection = out_view == out_light;
+
+		// Diffuse contribution
+		const Color diffuse = diff_color * std::abs(cos_theta_1);
+
+		// Specular contribution
+		const Vector3d h = (v + (is_reflection ? Li : Li_refracted_flipped)).normalized();
+		const Color specular = pow(std::abs(h.dot(N)), obj_specular_exponent) * obj_specular_color;
 
         // Attenuate lights according to the squared distance to the lights
-        lights_color += (diffuse_weight * diffuse + specular_weight * specular).cwiseProduct(light.color) / D.squaredNorm();
+		// Also ration the amount of light by whether it is reflection/refraction
+        lights_color += (diffuse_weight * diffuse + specular_weight * specular).cwiseProduct(light.color) / D.squaredNorm() * (is_reflection ? reflectance : 1 - reflectance);
     }
 
     Color refl_color = obj_reflection_color;
@@ -379,7 +419,6 @@ Color shoot_ray(const Vector3d &ray_origin, const Vector3d &ray_direction, int m
     // Make sure to check for total internal reflection before shooting a new ray.
     Color refraction_color(0, 0, 0, 0);
 	if (max_bounce > 0) {
-		// TODO
 		//refraction_color = 
 	}
 
@@ -473,6 +512,8 @@ int main(int argc, char *argv[]) {
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
 		{"obj_specular_exponent", required_argument, 0, 2  },
+		{"eta",                   required_argument, 0, 'e'},
+		{"s_fraction",            required_argument, 0, 5  },
 		{"max_bounce",            required_argument, 0, 'b'},
 		{"grid_size",             required_argument, 0, 'g'},
 		{"stddev",                required_argument, 0, 3  },
@@ -494,7 +535,7 @@ int main(int argc, char *argv[]) {
 	std::string filename("raytrace.png");
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "w:h:f:p:b:g:", long_options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "w:h:f:p:e:b:g:", long_options, NULL)) != -1) {
 		switch (opt) {
 		case 0:
 			filename = optarg;
@@ -510,6 +551,9 @@ int main(int argc, char *argv[]) {
 			break;
 		case 4:
 			n_sample = atoi(optarg);
+			break;
+		case 5:
+			s_fraction = atof(optarg);
 			break;
 		case 'w':
 			w = atoi(optarg);
@@ -531,6 +575,9 @@ int main(int argc, char *argv[]) {
 				std::cerr << "Unknown projection type: " << optarg << std::endl;
 				exit(EXIT_FAILURE);
 			}
+			break;
+		case 'e':
+			eta = atof(optarg);
 			break;
 		case 'b':
 			max_bounce = atoi(optarg);
