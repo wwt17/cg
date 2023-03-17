@@ -35,10 +35,14 @@ public:
     };
 
     std::vector<Node> nodes;
+	int n_nodes;
     int root;
 
-    AABBTree() = default;                           // Default empty constructor
-    AABBTree(const MatrixXd &V, const MatrixXi &F); // Build a BVH from an existing mesh
+    AABBTree() = default;                             // Default empty constructor
+    AABBTree(const MatrixX3d &V, const MatrixX3i &F); // Build a BVH from an existing mesh
+
+	int top_down_construct(int* const st, int* const ed, const MatrixX3d &V, const MatrixX3i &F, const MatrixX3d &centroids);
+	void find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_direction, Vector3d &p, Vector3d &N, std::pair<int, double> &nearest, const int cur_node);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -74,9 +78,10 @@ const std::string data_dir = DATA_DIR;
 std::string mesh_filename(data_dir + "dodeca.off");
 
 // Triangle Mesh
-MatrixXd vertices; // n x 3 matrix (n points)
-MatrixXi facets;   // m x 3 matrix (m triangles)
+MatrixX3d vertices; // n x 3 matrix (n points)
+MatrixX3i facets;   // m x 3 matrix (m triangles)
 AABBTree bvh;
+bool use_bvh = true;
 
 //Material for the object, same material for all objects
 const Color obj_ambient_color(0.0, 0.5, 0.0, 0);
@@ -114,7 +119,9 @@ void setup_scene() {
     }
 
     //setup tree
-    bvh = AABBTree(vertices, facets);
+	if (use_bvh) {
+		bvh = AABBTree(vertices, facets);
+	}
 
     //Lights
 	lights.emplace_back(Vector3d( 8,  8, 0), Color(16, 16, 16, 0));
@@ -130,17 +137,11 @@ void setup_scene() {
 // BVH Code
 ////////////////////////////////////////////////////////////////////////////////
 
-AlignedBox3d bbox_from_triangle(const Vector3d &a, const Vector3d &b, const Vector3d &c) {
-    AlignedBox3d box;
-    box.extend(a);
-    box.extend(b);
-    box.extend(c);
-    return box;
-}
-
-AABBTree::AABBTree(const MatrixXd &V, const MatrixXi &F) {
+bool top_down_construction = true;
+int* triangle_indexes_st;
+AABBTree::AABBTree(const MatrixX3d &V, const MatrixX3i &F) {
     // Compute the centroids of all the triangles in the input mesh
-    MatrixXd centroids(F.rows(), V.cols());
+    MatrixX3d centroids(F.rows(), V.cols());
     centroids.setZero();
     for (int i = 0; i < F.rows(); ++i) {
         for (int k = 0; k < F.cols(); ++k) {
@@ -149,11 +150,74 @@ AABBTree::AABBTree(const MatrixXd &V, const MatrixXi &F) {
         centroids.row(i) /= F.cols();
     }
 
-    // TODO
+    int triangle_indexes[F.rows()];
+	triangle_indexes_st = triangle_indexes;
+	for (int i = 0; i < F.rows(); ++i)
+		triangle_indexes[i] = i;
 
-    // Split each set of primitives into 2 sets of roughly equal size,
-    // based on sorting the centroids along one direction or another.
+	n_nodes = 0;
+	if (F.rows() == 0) {
+		root = -1;
+	}
+	else {
+		nodes.resize(F.rows() * 2 - 1);
+		if (top_down_construction) {
+			root = top_down_construct(triangle_indexes, triangle_indexes + F.rows(), V, F, centroids);
+		}
+	}
 }
+
+bool centroid_sorting_split = false;
+int AABBTree::top_down_construct(int* const st, int* const ed, const MatrixX3d &V, const MatrixX3i &F, const MatrixX3d &centroids) {
+	const int cur_node_id = n_nodes;
+	Node &cur_node = nodes[cur_node_id];
+	++n_nodes;
+	cur_node.parent = -1;
+	//std::cerr << (st - triangle_indexes_st) << ", " << (ed - triangle_indexes_st) << " (" << (ed - st) << ") " << std::endl;
+	if (ed - st == 1) {  // leaf: only 1
+		const int triangle = *st;
+		cur_node.bbox = AlignedBox3d();
+		for (int k = 0; k < 3; ++k) {
+			cur_node.bbox.extend(V.row(F(triangle, k)).transpose());
+		}
+		cur_node.left = -1;
+		cur_node.right = -1;
+		cur_node.triangle = triangle;
+	}
+	else {
+		// Split each set of primitives into 2 sets of roughly equal size,
+		// based on sorting the centroids along one direction or another.
+		if (centroid_sorting_split) {
+			AlignedBox3d centroid_bbox;
+			for (auto it = st; it < ed; ++it) {
+				const int triangle = *it;
+				centroid_bbox.extend(centroids.row(triangle).transpose());
+			}
+			const Vector3d span_size = centroid_bbox.max() - centroid_bbox.min();
+			int max_span_dim = 0;
+			for (int k = 0; k < 3; ++k)
+				if (span_size(k) > span_size(max_span_dim))
+					max_span_dim = k;
+			std::nth_element(
+				st, st + (ed - st) / 2, ed,
+				[=](const int a, const int b) {
+					return centroids(a, max_span_dim) < centroids(b, max_span_dim);
+				}
+			);
+		}
+		auto mid = st + ((ed - st + 1) / 2);
+		cur_node.bbox = AlignedBox3d();
+		cur_node.left  = top_down_construct(st, mid, V, F, centroids);
+		cur_node.bbox.extend(nodes[cur_node.left ].bbox);
+		nodes[cur_node.left ].parent = cur_node_id;
+		cur_node.right = top_down_construct(mid, ed, V, F, centroids);
+		cur_node.bbox.extend(nodes[cur_node.right].bbox);
+		nodes[cur_node.right].parent = cur_node_id;
+		cur_node.triangle = -1;
+	}
+	return cur_node_id;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Intersection code
@@ -175,46 +239,77 @@ double ray_triangle_intersection(const Vector3d &ray_origin, const Vector3d &ray
     return coord(0) >= 0 && coord(1) >= 0 && coord(2) >= 0 ? coord(3) : -inf;
 }
 
-bool ray_box_intersection(const Vector3d &ray_origin, const Vector3d &ray_direction, const AlignedBox3d &box) {
-    // TODO
+double ray_box_intersection(const Vector3d &ray_origin, const Vector3d &ray_direction, const AlignedBox3d &box) {
     // Compute whether the ray intersects the given box.
     // we are not testing with the real surface here anyway.
-    return false;
+	// Intersection of t ranges in all dimensions
+	double box_t_l = -inf, box_t_r = +inf;
+	for (int j = 0; j < 3; ++j) {
+		double t_l, t_r;
+		if (ray_direction(j) == 0) {
+			t_l = box.min()(j) <= ray_origin(j) ? -inf : +inf;
+			t_r = box.max()(j) >= ray_origin(j) ? +inf : -inf;
+		}
+		else {
+			t_l = (box.min()(j) - ray_origin(j)) / ray_direction(j);
+			t_r = (box.max()(j) - ray_origin(j)) / ray_direction(j);
+			if (t_l > t_r) std::swap(t_l, t_r);
+		}
+		box_t_l = std::max(box_t_l, t_l);
+		box_t_r = std::min(box_t_r, t_r);
+	}
+	return box_t_l > box_t_r ? -inf : box_t_r >= 0 ? std::max(box_t_l, 0.) : box_t_r;
+}
+
+inline void update_nearest_triangle(const Vector3d &ray_origin, const Vector3d &ray_direction, Vector3d &p, Vector3d &N, std::pair<int, double> &nearest, const size_t i) {
+	Vector3d tmp_p, tmp_N;
+	const double t = ray_triangle_intersection(
+		ray_origin, ray_direction,
+		vertices.row(facets(i, 0)),
+		vertices.row(facets(i, 1)),
+		vertices.row(facets(i, 2)),
+		tmp_p, tmp_N);
+	if (t >= eps && t < nearest.second) {
+		nearest.first = i;
+		nearest.second = t;
+		p = tmp_p;
+		N = tmp_N;
+	}
 }
 
 //Finds the closest intersecting object returns its index
 //In case of intersection it writes into p and N (intersection point and normals)
-bool use_data_structure = false;
 std::pair<int, double> find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_direction, Vector3d &p, Vector3d &N) {
-	int closest_index = -1;
-	double closest_t = inf;
-    Vector3d tmp_p, tmp_N;
-
-	if (!use_data_structure) {
+	std::pair<int, double> nearest(-1, inf);  // index of nearest (object, t)
+	if (!use_bvh) {
 		// Method (1): Traverse every triangle and return the closest hit.
 		const size_t nf = facets.rows();
 		for (size_t i = 0; i < nf; ++i) {
-			const double t = ray_triangle_intersection(
-				ray_origin, ray_direction,
-				vertices.row(facets(i, 0)),
-				vertices.row(facets(i, 1)),
-				vertices.row(facets(i, 2)),
-				tmp_p, tmp_N);
-			if (t >= eps && t < closest_t) {
-				closest_index = i;
-				closest_t = t;
-				p = tmp_p;
-				N = tmp_N;
-			}
+			update_nearest_triangle(ray_origin, ray_direction, p, N, nearest, i);
 		}
 	}
 	else {
 		// Method (2): Traverse the BVH tree and test the intersection with a
 		// triangles at the leaf nodes that intersects the input ray.
-		// TODO
+		bvh.find_nearest_object(ray_origin, ray_direction, p, N, nearest, bvh.root);
 	}
+	return nearest;
+}
 
-    return std::pair<int, double>(closest_index, closest_t);
+void AABBTree::find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_direction, Vector3d &p, Vector3d &N, std::pair<int, double> &nearest, const int cur_node) {
+	const double box_t = ray_box_intersection(ray_origin, ray_direction, nodes[cur_node].bbox);
+	// optimization: terminate if distance to the bbox is farther than the
+	// known nearest object
+	if (box_t < 0 || box_t >= nearest.second) {
+		return;
+	}
+	if (nodes[cur_node].triangle != -1) {  // leaf
+		update_nearest_triangle(ray_origin, ray_direction, p, N, nearest, nodes[cur_node].triangle);
+	}
+	else {
+		find_nearest_object(ray_origin, ray_direction, p, N, nearest, nodes[cur_node].left);
+		find_nearest_object(ray_origin, ray_direction, p, N, nearest, nodes[cur_node].right);
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -329,9 +424,13 @@ void raytrace_scene(
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
+	std::ios::sync_with_stdio(false);
+
 	static struct option long_options[] = {
 		{"filename",              required_argument, 0, 0  },
 		{"mesh_filename",         required_argument, 0, 6  },
+		{"brute_force",           no_argument,       0, 7  },
+		{"centroid_sorting_split",no_argument,       0, 8  },
 		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
@@ -356,6 +455,12 @@ int main(int argc, char *argv[]) {
 			break;
 		case 6:
 			mesh_filename = optarg;
+			break;
+		case 7:
+			use_bvh = false;
+			break;
+		case 8:
+			centroid_sorting_split = true;
 			break;
 		case 1:
 			field_of_view = pi / 180 * atoi(optarg); // field of view in degree
