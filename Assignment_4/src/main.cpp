@@ -471,8 +471,8 @@ void raytrace_scene(
                 ray_direction = (pixel_center - camera_position).normalized();
             }
             else if (projection_type == orthographic) {  // Orthographic camera
-                ray_origin = pixel_center;
                 ray_direction = Vector3d(0, 0, -1);
+                ray_origin = pixel_center - ray_direction * focal_length;
             }
 
             const Color C = shoot_ray(ray_origin, ray_direction);
