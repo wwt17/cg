@@ -60,7 +60,7 @@ Output of dragon: (by running `./assignment4 --mesh_filename ../data/dragon.off 
 
 ### Bottom-Up Construction
 
-Since the time complexity of our simple implementation is $O(n^2)$, it takes prohibitively long to build the tree for the dragon. So I just show examples on the bunny. Results on other meshes are the same.
+Since the time complexity of our simple implementation is $O(n^3)$, it takes prohibitively long to build the tree for the dragon. So I just show examples on the bunny. Results on other meshes are the same.
 
 Output of bunny using `centroid_distance` criterion (by running `./assignment4 --mesh_filename ../data/bunny.off --construction bottom-up --criterion centroid_distance --filename ../img/bunny_bottom-up_centroid_distance.png`):
 
