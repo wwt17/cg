@@ -42,6 +42,7 @@ public:
     AABBTree(const MatrixX3d &V, const MatrixX3i &F); // Build a BVH from an existing mesh
 
 	int top_down_construct(int* const st, int* const ed, const MatrixX3d &V, const MatrixX3i &F, const MatrixX3d &centroids);
+	int bottom_up_construct(const MatrixX3d &V, const MatrixX3i &F, double (* const criterion)(const Node &n1, const Node &n2));
 	void find_nearest_object(const Vector3d &ray_origin, const Vector3d &ray_direction, Vector3d &p, Vector3d &N, std::pair<int, double> &nearest, const int cur_node);
 };
 
@@ -137,24 +138,20 @@ void setup_scene() {
 // BVH Code
 ////////////////////////////////////////////////////////////////////////////////
 
+double squared_centroid_distance(const AABBTree::Node &n1, const AABBTree::Node &n2) {
+	return (n1.bbox.center() - n2.bbox.center()).squaredNorm();
+}
+
+double volume_increase(const AABBTree::Node &n1, const AABBTree::Node &n2) {
+	AlignedBox3d bbox = n1.bbox;
+	bbox.extend(n2.bbox);
+	return bbox.volume() - n1.bbox.volume() - n2.bbox.volume();
+}
+
+double (*criterion)(const AABBTree::Node &n1, const AABBTree::Node &n2) = &squared_centroid_distance;
+
 bool top_down_construction = true;
-int* triangle_indexes_st;
 AABBTree::AABBTree(const MatrixX3d &V, const MatrixX3i &F) {
-    // Compute the centroids of all the triangles in the input mesh
-    MatrixX3d centroids(F.rows(), V.cols());
-    centroids.setZero();
-    for (int i = 0; i < F.rows(); ++i) {
-        for (int k = 0; k < F.cols(); ++k) {
-            centroids.row(i) += V.row(F(i, k));
-        }
-        centroids.row(i) /= F.cols();
-    }
-
-    int triangle_indexes[F.rows()];
-	triangle_indexes_st = triangle_indexes;
-	for (int i = 0; i < F.rows(); ++i)
-		triangle_indexes[i] = i;
-
 	n_nodes = 0;
 	if (F.rows() == 0) {
 		root = -1;
@@ -162,27 +159,56 @@ AABBTree::AABBTree(const MatrixX3d &V, const MatrixX3i &F) {
 	else {
 		nodes.resize(F.rows() * 2 - 1);
 		if (top_down_construction) {
+			// Compute the centroids of all the triangles in the input mesh
+			MatrixX3d centroids(F.rows(), V.cols());
+			centroids.setZero();
+			for (int i = 0; i < F.rows(); ++i) {
+				for (int k = 0; k < F.cols(); ++k) {
+					centroids.row(i) += V.row(F(i, k));
+				}
+				centroids.row(i) /= F.cols();
+			}
+
+			int triangle_indexes[F.rows()];
+			for (int i = 0; i < F.rows(); ++i)
+				triangle_indexes[i] = i;
+
 			root = top_down_construct(triangle_indexes, triangle_indexes + F.rows(), V, F, centroids);
+		}
+		else {
+			root = bottom_up_construct(V, F, criterion);
 		}
 	}
 }
 
+inline void build_leaf_node(AABBTree::Node &node, const int triangle, const MatrixX3d &V, const MatrixX3i &F) {
+	node.bbox = AlignedBox3d();
+	for (int k = 0; k < 3; ++k) {
+		node.bbox.extend(V.row(F(triangle, k)).transpose());
+	}
+	node.left = -1;
+	node.right = -1;
+	node.triangle = triangle;
+}
+
+inline void build_internal_node(std::vector<AABBTree::Node> &nodes, const int cur_node_id, const int left, const int right) {
+	AABBTree::Node &cur_node = nodes[cur_node_id];
+	cur_node.bbox = AlignedBox3d();
+	cur_node.left = left;
+	cur_node.bbox.extend(nodes[left ].bbox);
+	nodes[left ].parent = cur_node_id;
+	cur_node.right = right;
+	cur_node.bbox.extend(nodes[right].bbox);
+	nodes[right].parent = cur_node_id;
+	cur_node.triangle = -1;
+}
+
 bool centroid_sorting_split = false;
 int AABBTree::top_down_construct(int* const st, int* const ed, const MatrixX3d &V, const MatrixX3i &F, const MatrixX3d &centroids) {
-	const int cur_node_id = n_nodes;
-	Node &cur_node = nodes[cur_node_id];
-	++n_nodes;
-	cur_node.parent = -1;
-	//std::cerr << (st - triangle_indexes_st) << ", " << (ed - triangle_indexes_st) << " (" << (ed - st) << ") " << std::endl;
+	const int cur_node_id = n_nodes++;
+	nodes[cur_node_id].parent = -1;
 	if (ed - st == 1) {  // leaf: only 1
-		const int triangle = *st;
-		cur_node.bbox = AlignedBox3d();
-		for (int k = 0; k < 3; ++k) {
-			cur_node.bbox.extend(V.row(F(triangle, k)).transpose());
-		}
-		cur_node.left = -1;
-		cur_node.right = -1;
-		cur_node.triangle = triangle;
+		build_leaf_node(nodes[cur_node_id], *st, V, F);
 	}
 	else {
 		// Split each set of primitives into 2 sets of roughly equal size,
@@ -206,16 +232,56 @@ int AABBTree::top_down_construct(int* const st, int* const ed, const MatrixX3d &
 			);
 		}
 		auto mid = st + ((ed - st + 1) / 2);
-		cur_node.bbox = AlignedBox3d();
-		cur_node.left  = top_down_construct(st, mid, V, F, centroids);
-		cur_node.bbox.extend(nodes[cur_node.left ].bbox);
-		nodes[cur_node.left ].parent = cur_node_id;
-		cur_node.right = top_down_construct(mid, ed, V, F, centroids);
-		cur_node.bbox.extend(nodes[cur_node.right].bbox);
-		nodes[cur_node.right].parent = cur_node_id;
-		cur_node.triangle = -1;
+		build_internal_node(
+			nodes,
+			cur_node_id,
+			top_down_construct(st, mid, V, F, centroids),
+			top_down_construct(mid, ed, V, F, centroids)
+		);
 	}
 	return cur_node_id;
+}
+
+int AABBTree::bottom_up_construct(const MatrixX3d &V, const MatrixX3i &F, double (* const criterion)(const AABBTree::Node &n1, const AABBTree::Node &n2)) {
+	int cur_set_size = 0;
+	int cur_set[F.rows()];  // containing node indices
+	// Initialize cur_set with all leaf nodes created from every triangle
+	for (; n_nodes < F.rows(); ++n_nodes) {
+		build_leaf_node(nodes[n_nodes], n_nodes, V, F);
+		cur_set[cur_set_size++] = n_nodes;
+	}
+
+	while (cur_set_size > 1) {
+		// find i_to_merge, j_to_merge with min criterion value
+		double min_criterion_value = inf;
+		int i_to_merge = 0, j_to_merge = 1;
+		for (int i = 0; i < cur_set_size; ++i)
+			for (int j = i + 1; j < cur_set_size; ++j) {
+				double criterion_value = criterion(nodes[cur_set[i]], nodes[cur_set[j]]);
+				if (criterion_value < min_criterion_value) {
+					min_criterion_value = criterion_value;
+					i_to_merge = i;
+					j_to_merge = j;
+				}
+			}
+
+		// merge cur_set[i_to_merge], cur_set[j_to_merge]
+		const int cur_node_id = n_nodes++;
+		build_internal_node(
+			nodes,
+			cur_node_id,
+			cur_set[i_to_merge],
+			cur_set[j_to_merge]
+		);
+
+		// update cur_set
+		cur_set[i_to_merge] = cur_node_id;
+		cur_set[j_to_merge] = cur_set[--cur_set_size];
+	}
+
+	const int root = cur_set[0];
+	nodes[root].parent = -1;
+	return root;
 }
 
 
@@ -431,6 +497,8 @@ int main(int argc, char *argv[]) {
 		{"mesh_filename",         required_argument, 0, 6  },
 		{"brute_force",           no_argument,       0, 7  },
 		{"centroid_sorting_split",no_argument,       0, 8  },
+		{"construction",          required_argument, 0, 9  },
+		{"criterion",             required_argument, 0, 10 },
 		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
@@ -461,6 +529,33 @@ int main(int argc, char *argv[]) {
 			break;
 		case 8:
 			centroid_sorting_split = true;
+			break;
+		case 9:
+			switch (optarg[0]) {
+				case 'T':
+				case 't':
+					top_down_construction = true;
+					break;
+				case 'B':
+				case 'b':
+					top_down_construction = false;
+					break;
+				default:
+					std::cerr << "Unknown construction type: " << optarg << std::endl;
+					exit(EXIT_FAILURE);
+			}
+			break;
+		case 10:
+			if (optarg == std::string("centroid_distance")) {
+				criterion = &squared_centroid_distance;
+			}
+			else if (optarg == std::string("volume_increase")) {
+				criterion = &volume_increase;
+			}
+			else {
+				std::cerr << "Unknown criterion: " << optarg << std::endl;
+				exit(EXIT_FAILURE);
+			}
 			break;
 		case 1:
 			field_of_view = pi / 180 * atoi(optarg); // field of view in degree
