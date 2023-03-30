@@ -219,7 +219,7 @@ void render_scene(
 			}
 		}
 
-		rasterize_lines(program, uniform, edge_vertices, 1, frameBuffer);
+		rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
 	}
 
 	std::vector<uint8_t> image;

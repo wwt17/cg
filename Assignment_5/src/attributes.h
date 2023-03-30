@@ -8,7 +8,7 @@ typedef Eigen::Vector4d            Color ;  // RGBA Color in [0, 1]
 typedef Eigen::Matrix<uint8_t,4,1> Color8;  // RGBA Color in [0, 255]
 typedef Eigen::Vector4d            Position;  // Homogeneous coordinates
 
-const double eps = 1e-7, inf = 1./0, pi = acos(-1);
+const double eps = 1e-7, inf = 1/0., pi = acos(-1);
 
 inline Position position3_to_position(const Eigen::Vector3d& position3) {
 	return Position(position3[0], position3[1], position3[2], 1);
@@ -97,7 +97,7 @@ class FrameBufferAttributes {
 		const double blended_depth
 	) {
 		auto it = layers.begin();
-		while (it != layers.end() && it->depth > blended_depth - eps) ++it;
+		while (it != layers.end() && it->depth > blended_depth - 5e-3) ++it;
 		layers.insert(it, Layer(blended_color, blended_depth));
 		update_color();
 	}
