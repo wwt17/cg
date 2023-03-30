@@ -39,6 +39,10 @@ inline Eigen::Vector3d position_to_position3(const Position& position) {
 	return position.head<3>() / position[3];
 }
 
+inline Position normalize_position(const Position& position) {
+	return position / position[3];
+}
+
 inline Color no_transparency(const Color& color) {
 	return Color(color[0], color[1], color[2], 1);
 }
@@ -74,7 +78,7 @@ class VertexAttributes {
         const double gamma
     ) {
 		return VertexAttributes(
-			alpha * a.position + beta * b.position + gamma * c.position,
+			alpha * normalize_position(a.position) + beta * normalize_position(b.position) + gamma * normalize_position(c.position),
 			alpha * a.color    + beta * b.color    + gamma * c.color,
 			alpha * a.normal   + beta * b.normal   + gamma * c.normal
 		);
