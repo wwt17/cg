@@ -23,10 +23,6 @@ using namespace Eigen;
 // Classes for the scene
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef Vector4d Color; // RBGA Color (in [0, 1])
-
-const double eps = 1e-7, inf = 1./0., pi = acos(-1);
-
 template<class T>
 T sqr(const T x) {
 	return x * x;
@@ -111,6 +107,8 @@ void setup_scene() {
 ////////////////////////////////////////////////////////////////////////////////
 
 void render_scene(
+	// Shading
+	const std::string shading,
 	// Camera settings
 	Vector3d camera_position,
 	ProjectionType projection_type,
@@ -137,35 +135,92 @@ void render_scene(
 	// Global Constants (empty in this example)
 	UniformAttributes uniform;
 
-	// Basic rasterization program
+	// Rasterization program
 	Program program;
 
-	// The vertex shader is the identity
-	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return va;
-	};
-
-	// The fragment shader uses a fixed color
-	program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return FragmentAttributes(1, 1, 1);
-	};
-
-	// The blending shader converts colors between 0 and 1 to uint8
-	program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
-		return FrameBufferAttributes(fa.color[0]*255,fa.color[1]*255,fa.color[2]*255,fa.color[3]*255);
-	};
-
-	// One triangle in the center of the screen
-	std::vector<VertexAttributes> triangle_vertices;
 	const size_t nf = facets.rows();
-	for (size_t i = 0; i < nf; ++i) {
-		for (size_t k = 0; k < 3; ++k) {
-			const Vector3d position = vertices.row(facets(i, k));
-			triangle_vertices.push_back(VertexAttributes(position(0), position(1), position(2)));
-		}
-	}
 
-	rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+	if (shading == "silhouette") {
+		uniform.facet_color = Color(1, 1, 1, 1);
+
+		// The vertex shader is the identity
+		program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			return va;
+		};
+
+		// The fragment shader uses a fixed color
+		program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			return FragmentAttributes(uniform.facet_color, va.position);
+		};
+
+		// The blending shader converts colors between 0 and 1 to uint8
+		program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
+			FrameBufferAttributes new_fba = previous;
+			new_fba.blend_with(fa.color, fa.position[2]);
+			return new_fba;
+		};
+
+		// Triangles
+		std::vector<VertexAttributes> triangle_vertices;
+		for (size_t i = 0; i < nf; ++i) {
+			for (size_t k = 0; k < 3; ++k) {
+				const Vector3d position = vertices.row(facets(i, k));
+				triangle_vertices.push_back(VertexAttributes(position3_to_position(position)));
+			}
+		}
+
+		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+	}
+	else if (shading == "wireframe") {
+		uniform.edge_color = Color(0, 0, 0, 1);
+		uniform.facet_color = Color(1, 1, 1, 0.5);
+
+		// The vertex shader is the identity
+		program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			return va;
+		};
+
+		// The fragment shader uses a fixed color
+		program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			return FragmentAttributes(uniform.facet_color, va.position);
+		};
+
+		// The blending shader converts colors between 0 and 1 to uint8
+		program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
+			FrameBufferAttributes new_fba = previous;
+			new_fba.blend_with(fa.color, fa.position[2]);
+			return new_fba;
+		};
+
+		// Triangles
+		std::vector<VertexAttributes> triangle_vertices;
+		for (size_t i = 0; i < nf; ++i) {
+			for (size_t k = 0; k < 3; ++k) {
+				const Vector3d position = vertices.row(facets(i, k));
+				triangle_vertices.push_back(VertexAttributes(position3_to_position(position)));
+			}
+		}
+
+		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+
+		// The fragment shader uses a fixed color
+		program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			return FragmentAttributes(uniform.edge_color, va.position);
+		};
+
+		// Edges
+		std::vector<VertexAttributes> edge_vertices;
+		for (size_t i = 0; i < nf; ++i) {
+			for (size_t k = 0; k < 3; ++k) {
+				for (size_t dk = 0; dk < 2; ++dk) {
+					const Vector3d position = vertices.row(facets(i, (k + dk) % 3));
+					edge_vertices.push_back(VertexAttributes(position3_to_position(position)));
+				}
+			}
+		}
+
+		rasterize_lines(program, uniform, edge_vertices, 1, frameBuffer);
+	}
 
 	std::vector<uint8_t> image;
 	framebuffer_to_uint8(frameBuffer,image);
@@ -181,6 +236,7 @@ int main(int argc, char *argv[]) {
 		{"filename",              required_argument, 0, 0  },
 		{"mesh_filename",         required_argument, 0, 6  },
 		{"no_refit_mesh",         no_argument,       0, 7  },
+		{"shading",               required_argument, 0, 8  },
 		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
@@ -196,6 +252,7 @@ int main(int argc, char *argv[]) {
 	double field_of_view = pi / 4; // 45 degrees
 	size_t w = 500, h = 500;
 	std::string filename("triangle.png");
+	std::string shading("wireframe");
 
 	int opt;
 	while ((opt = getopt_long(argc, argv, "w:h:f:p:", long_options, NULL)) != -1) {
@@ -208,6 +265,9 @@ int main(int argc, char *argv[]) {
 			break;
 		case 7:
 			refit_mesh = false;
+			break;
+		case 8:
+			shading = optarg;
 			break;
 		case 1:
 			field_of_view = pi / 180 * atoi(optarg); // field of view in degree
@@ -245,6 +305,7 @@ int main(int argc, char *argv[]) {
     setup_scene();
 
     render_scene(
+		shading,
 		camera_position,
 		projection_type,
 		focal_length,
