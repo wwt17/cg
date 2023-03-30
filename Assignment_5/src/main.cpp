@@ -134,22 +134,17 @@ void render_scene(
 
 	UniformAttributes uniform;
 
-	Program facet_program;
-	facet_program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return va;
+	Program program;
+	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+		return VertexAttributes(va.position, uniform.color);
 	};
-	facet_program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return FragmentAttributes(uniform.facet_color, va.position);
+	program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+		return FragmentAttributes(va.color, va.position);
 	};
-	facet_program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
+	program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
 		FrameBufferAttributes new_fba = previous;
 		new_fba.blend_with(fa.color, fa.position[2]);
 		return new_fba;
-	};
-
-	Program edge_program = facet_program;
-	edge_program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return FragmentAttributes(uniform.edge_color, va.position);
 	};
 
 	// Triangles
@@ -174,14 +169,14 @@ void render_scene(
 	}
 
 	if (shading == "silhouette") {
-		uniform.facet_color = Color(1, 1, 1, 1);
-		rasterize_triangles(facet_program, uniform, triangle_vertices, frameBuffer);
+		uniform.color = Color(1, 1, 1, 1);
+		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 	}
 	else if (shading == "wireframe") {
-		uniform.edge_color = Color(0, 0, 0, 1);
-		uniform.facet_color = Color(1, 1, 1, 0.5);
-		rasterize_triangles(facet_program, uniform, triangle_vertices, frameBuffer);
-		rasterize_lines(edge_program, uniform, edge_vertices, 0.5, frameBuffer);
+		uniform.color = Color(1, 1, 1, 0.5);
+		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+		uniform.color = Color(0, 0, 0, 1);
+		rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
 	}
 
 	std::vector<uint8_t> image;

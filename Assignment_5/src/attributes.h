@@ -29,10 +29,14 @@ inline Color blend(const Color& back_color, const Color& front_color) {
 class VertexAttributes {
 	public:
 	Position position;
+	Color color;
+	Eigen::Vector3d normal;
 
 	VertexAttributes(
-		const Position& position=Position(0, 0, 0, 1)
-	): position(position) {
+		const Position& position=Position(0, 0, 0, 1),
+		const Color& color=Color(0, 0, 0, 1),
+		const Eigen::Vector3d& normal=Eigen::Vector3d(0, 0, 0)
+	): position(position), color(color), normal(normal) {
 	}
 
     // Interpolates the vertex attributes
@@ -44,9 +48,11 @@ class VertexAttributes {
         const double beta, 
         const double gamma
     ) {
-        VertexAttributes r;
-        r.position = alpha*a.position + beta*b.position + gamma*c.position;
-        return r;
+		return VertexAttributes(
+			alpha * a.position + beta * b.position + gamma * c.position,
+			alpha * a.color    + beta * b.color    + gamma * c.color,
+			alpha * a.normal   + beta * b.normal   + gamma * c.normal
+		);
     }
 };
 
@@ -105,5 +111,5 @@ class FrameBufferAttributes {
 
 class UniformAttributes {
 	public:
-	Color edge_color, facet_color;
+	Color color;
 };
