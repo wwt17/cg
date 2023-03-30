@@ -19,27 +19,9 @@
 // Shortcut to avoid Eigen:: everywhere, DO NOT USE IN .h
 using namespace Eigen;
 
-////////////////////////////////////////////////////////////////////////////////
-// Classes for the scene
-////////////////////////////////////////////////////////////////////////////////
-
-template<class T>
-T sqr(const T x) {
-	return x * x;
-}
-
 
 enum ProjectionType {orthographic, perspective};
 const char *ProjectionTypeString[] = {"orthographic", "perspective"};
-
-
-class Light {
-public:
-	Vector3d position;
-	Color color;
-	Light(const Vector3d &position, const Color &color): position(position), color(color) {
-	}
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Scene setup, global variables
@@ -63,6 +45,8 @@ const Color obj_reflection_color(0.7, 0.7, 0.7, 0);
 std::vector<Light> lights;
 //Ambient light
 const Color ambient_light(0.2, 0.2, 0.2, 0);
+
+double alpha = -1;  // not set
 
 //Fills the different arrays
 void setup_scene() {
@@ -147,14 +131,17 @@ void render_scene(
 		return new_fba;
 	};
 
+	const size_t nv = vertices.rows(), nf = facets.rows();
+
 	// Triangles
 	std::vector<VertexAttributes> triangle_vertices;
-	const size_t nf = facets.rows();
 	for (size_t i = 0; i < nf; ++i) {
-		for (size_t k = 0; k < 3; ++k) {
-			const Vector3d position = vertices.row(facets(i, k));
-			triangle_vertices.push_back(VertexAttributes(position3_to_position(position)));
-		}
+		Vector3d points[3];
+		for (size_t k = 0; k < 3; ++k)
+			points[k] = vertices.row(facets(i, k));
+		Vector3d normal = (points[1] - points[0]).cross(points[2] - points[0]).normalized();
+		for (size_t k = 0; k < 3; ++k)
+			triangle_vertices.push_back(VertexAttributes(position3_to_position(points[k]), Color(0, 0, 0, 1), normal));
 	}
 
 	// Edges
@@ -169,14 +156,90 @@ void render_scene(
 	}
 
 	if (shading == "silhouette") {
-		uniform.color = Color(1, 1, 1, 1);
+		if (alpha == -1)
+			alpha = 1;
+		uniform.color = Color(1, 1, 1, alpha);
 		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 	}
 	else if (shading == "wireframe") {
-		uniform.color = Color(1, 1, 1, 0.5);
+		if (alpha == -1)
+			alpha = 0.5;
+		uniform.color = Color(1, 1, 1, alpha);
 		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 		uniform.color = Color(0, 0, 0, 1);
 		rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
+	}
+	else {
+		if (alpha == -1)
+			alpha = 1;
+		Program shading_program = program;
+		uniform.obj_ambient_color = obj_ambient_color;
+		uniform.obj_diffuse_color = obj_diffuse_color;
+		uniform.obj_specular_color = obj_specular_color;
+		uniform.obj_specular_exponent = obj_specular_exponent;
+		uniform.ambient_light = ambient_light;
+		uniform.lights = lights;
+		uniform.alpha = alpha;
+		shading_program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			const Vector3d ray_direction(0, 0, 1);
+			const Vector3d &p = position_to_position3(va.position), &N = va.normal;
+
+			// Ambient light contribution
+			const Color ambient_color = uniform.obj_ambient_color.array() * uniform.ambient_light.array();
+
+			// Punctual lights contribution (direct lighting)
+			Color lights_color(0, 0, 0, 0);
+			for (const Light &light: uniform.lights) {
+				const Vector3d D = light.position - p;
+
+				// Diffuse contribution
+				const Vector3d Li = D.normalized();
+				const Color diffuse = uniform.obj_diffuse_color * std::max(Li.dot(N), 0.0);
+
+				// Specular contribution
+				const Vector3d Hi = (Li - ray_direction).normalized();
+				const Color specular = uniform.obj_specular_color * std::pow(std::max(N.dot(Hi), 0.0), uniform.obj_specular_exponent);
+
+				// Attenuate lights according to the squared distance to the lights
+				lights_color += (diffuse + specular).cwiseProduct(light.color) / D.squaredNorm();
+			}
+
+			// Rendering equation
+			Color C = ambient_color + lights_color;
+
+			//Set alpha
+			C(3) = uniform.alpha;
+
+			return VertexAttributes(va.position, C);
+		};
+		if (shading == "per-vertex") {
+			// Compute the per-vertex normals by averaging per-face normals
+			MatrixX3d sum_normals = MatrixX3d::Zero(nv, 3);
+			VectorXi cnt_facets = VectorXi::Zero(nv);
+			auto it = triangle_vertices.begin();
+			for (size_t i = 0; i < nf; ++i) {
+				for (size_t k = 0; k < 3; ++k) {
+					size_t vertex_id = facets(i, k);
+					cnt_facets(vertex_id) += 1;
+					sum_normals.row(vertex_id) += it->normal;
+					++it;
+				}
+			}
+			MatrixX3d normals = sum_normals.array().colwise() / cnt_facets.array().cast<double>();
+			it = triangle_vertices.begin();
+			for (size_t i = 0; i < nf; ++i) {
+				for (size_t k = 0; k < 3; ++k) {
+					size_t vertex_id = facets(i, k);
+					it->normal = normals.row(vertex_id);
+					++it;
+				}
+			}
+		}
+		rasterize_triangles(shading_program, uniform, triangle_vertices, frameBuffer);
+		if (shading == "flat") {
+			uniform.color = Color(0, 0, 0, 1);
+			rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
+		}
 	}
 
 	std::vector<uint8_t> image;
@@ -194,6 +257,7 @@ int main(int argc, char *argv[]) {
 		{"mesh_filename",         required_argument, 0, 6  },
 		{"no_refit_mesh",         no_argument,       0, 7  },
 		{"shading",               required_argument, 0, 8  },
+		{"alpha",                 required_argument, 0, 'a'},
 		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
@@ -212,7 +276,7 @@ int main(int argc, char *argv[]) {
 	std::string shading("wireframe");
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "w:h:f:p:", long_options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "w:h:f:p:a:", long_options, NULL)) != -1) {
 		switch (opt) {
 		case 0:
 			filename = optarg;
@@ -225,6 +289,9 @@ int main(int argc, char *argv[]) {
 			break;
 		case 8:
 			shading = optarg;
+			break;
+		case 'a':
+			alpha = atof(optarg);
 			break;
 		case 1:
 			field_of_view = pi / 180 * atoi(optarg); // field of view in degree

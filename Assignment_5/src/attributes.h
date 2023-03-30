@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 typedef Eigen::Vector4d            Color ;  // RGBA Color in [0, 1]
 typedef Eigen::Matrix<uint8_t,4,1> Color8;  // RGBA Color in [0, 255]
@@ -10,8 +11,32 @@ typedef Eigen::Vector4d            Position;  // Homogeneous coordinates
 
 const double eps = 1e-7, inf = 1/0., pi = acos(-1);
 
+////////////////////////////////////////////////////////////////////////////////
+// Classes for the scene
+////////////////////////////////////////////////////////////////////////////////
+
+template<class T>
+T sqr(const T x) {
+	return x * x;
+}
+
+
+class Light {
+public:
+	Eigen::Vector3d position;
+	Color color;
+	Light(const Eigen::Vector3d &position, const Color &color): position(position), color(color) {
+	}
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 inline Position position3_to_position(const Eigen::Vector3d& position3) {
 	return Position(position3[0], position3[1], position3[2], 1);
+}
+
+inline Eigen::Vector3d position_to_position3(const Position& position) {
+	return position.head<3>() / position[3];
 }
 
 inline Color no_transparency(const Color& color) {
@@ -111,5 +136,12 @@ class FrameBufferAttributes {
 
 class UniformAttributes {
 	public:
-	Color color;
+	Color
+		color,
+		obj_ambient_color,
+		obj_diffuse_color,
+		obj_specular_color,
+		ambient_light;
+	double obj_specular_exponent, alpha;
+	std::vector<Light> lights;
 };
