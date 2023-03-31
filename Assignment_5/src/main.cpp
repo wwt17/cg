@@ -11,6 +11,7 @@
 
 // Utilities for the Assignment
 #include "raster.h"
+#include <gif.h>
 
 // Image writing library
 #define STB_IMAGE_WRITE_IMPLEMENTATION // Do not include this line twice in your project!
@@ -93,11 +94,13 @@ void setup_scene() {
 void render_scene(
 	// Shading
 	const std::string shading,
+	// Transformation
+	const bool transformation,
 	// Camera settings
-	Vector3d camera_position,
-	ProjectionType projection_type,
-	double focal_length,
-	double field_of_view,
+	const Vector3d camera_position,
+	const ProjectionType projection_type,
+	const double focal_length,
+	const double field_of_view,
 	// Image size (h, w)
 	const size_t w,
 	const size_t h,
@@ -131,6 +134,8 @@ void render_scene(
 		return new_fba;
 	};
 
+	Program shading_program = program;
+
 	const size_t nv = vertices.rows(), nf = facets.rows();
 
 	// Triangles
@@ -158,21 +163,14 @@ void render_scene(
 	if (shading == "silhouette") {
 		if (alpha == -1)
 			alpha = 1;
-		uniform.color = Color(1, 1, 1, alpha);
-		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 	}
 	else if (shading == "wireframe") {
 		if (alpha == -1)
 			alpha = 0.5;
-		uniform.color = Color(1, 1, 1, alpha);
-		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
-		uniform.color = Color(0, 0, 0, 1);
-		rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
 	}
 	else {
 		if (alpha == -1)
 			alpha = 1;
-		Program shading_program = program;
 		uniform.obj_ambient_color = obj_ambient_color;
 		uniform.obj_diffuse_color = obj_diffuse_color;
 		uniform.obj_specular_color = obj_specular_color;
@@ -235,16 +233,37 @@ void render_scene(
 				}
 			}
 		}
-		rasterize_triangles(shading_program, uniform, triangle_vertices, frameBuffer);
-		if (shading == "flat") {
+	}
+
+	auto rasterize = [&]() {
+		if (shading == "silhouette") {
+			uniform.color = Color(1, 1, 1, alpha);
+			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+		}
+		else if (shading == "wireframe") {
+			uniform.color = Color(1, 1, 1, alpha);
+			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 			uniform.color = Color(0, 0, 0, 1);
 			rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
 		}
-	}
+		else {
+			rasterize_triangles(shading_program, uniform, triangle_vertices, frameBuffer);
+			if (shading == "flat") {
+				uniform.color = Color(0, 0, 0, 1);
+				rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
+			}
+		}
+	};
 
 	std::vector<uint8_t> image;
-	framebuffer_to_uint8(frameBuffer,image);
-	stbi_write_png(filename.c_str(), frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows()*4);
+	if (transformation) {
+		// TODO
+	}
+	else {
+		rasterize();
+		framebuffer_to_uint8(frameBuffer, image);
+		stbi_write_png(filename.c_str(), frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows()*4);
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -258,6 +277,7 @@ int main(int argc, char *argv[]) {
 		{"no_refit_mesh",         no_argument,       0, 7  },
 		{"shading",               required_argument, 0, 8  },
 		{"alpha",                 required_argument, 0, 'a'},
+		{"transformation",        no_argument,       0, 't'},
 		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
@@ -274,6 +294,7 @@ int main(int argc, char *argv[]) {
 	size_t w = 500, h = 500;
 	std::string filename("triangle.png");
 	std::string shading("wireframe");
+	bool transformation = false;
 
 	int opt;
 	while ((opt = getopt_long(argc, argv, "w:h:f:p:a:", long_options, NULL)) != -1) {
@@ -292,6 +313,9 @@ int main(int argc, char *argv[]) {
 			break;
 		case 'a':
 			alpha = atof(optarg);
+			break;
+		case 't':
+			transformation = true;
 			break;
 		case 1:
 			field_of_view = pi / 180 * atoi(optarg); // field of view in degree
@@ -326,10 +350,24 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	if (transformation) {
+		if (!endsWith(filename, ".gif")) {
+			std::cerr << "With object transformation, output filename should ends with .gif." << std::endl;
+			exit(EXIT_FAILURE);
+		}
+	}
+	else {
+		if (!endsWith(filename, ".png")) {
+			std::cerr << "Without object transformation, output filename should ends with .png." << std::endl;
+			exit(EXIT_FAILURE);
+		}
+	}
+
     setup_scene();
 
     render_scene(
 		shading,
+		transformation,
 		camera_position,
 		projection_type,
 		focal_length,

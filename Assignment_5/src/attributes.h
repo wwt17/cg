@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <string>
 #include <cmath>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -12,7 +13,7 @@ typedef Eigen::Vector4d            Position;  // Homogeneous coordinates
 const double eps = 1e-7, inf = 1/0., pi = acos(-1);
 
 ////////////////////////////////////////////////////////////////////////////////
-// Classes for the scene
+// Utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
 template<class T>
@@ -20,6 +21,13 @@ T sqr(const T x) {
 	return x * x;
 }
 
+inline bool endsWith(const std::string& str, const std::string& suffix) {
+	return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Classes for the scene
+////////////////////////////////////////////////////////////////////////////////
 
 class Light {
 public:
