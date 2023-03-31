@@ -5,6 +5,7 @@
 #include <limits>
 #include <fstream>
 #include <algorithm>
+#include <functional>
 #include <numeric>
 #include <cmath>
 #include <getopt.h>
@@ -160,13 +161,25 @@ void render_scene(
 		}
 	}
 
+	std::function<void()> rasterize;
+
 	if (shading == "silhouette") {
 		if (alpha == -1)
 			alpha = 1;
+		rasterize = [&]() {
+			uniform.color = Color(1, 1, 1, alpha);
+			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+		};
 	}
 	else if (shading == "wireframe") {
 		if (alpha == -1)
 			alpha = 0.5;
+		rasterize = [&]() {
+			uniform.color = Color(1, 1, 1, alpha);
+			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
+			uniform.color = Color(0, 0, 0, 1);
+			rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
+		};
 	}
 	else {
 		if (alpha == -1)
@@ -232,28 +245,18 @@ void render_scene(
 					++it;
 				}
 			}
-		}
-	}
-
-	auto rasterize = [&]() {
-		if (shading == "silhouette") {
-			uniform.color = Color(1, 1, 1, alpha);
-			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
-		}
-		else if (shading == "wireframe") {
-			uniform.color = Color(1, 1, 1, alpha);
-			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
-			uniform.color = Color(0, 0, 0, 1);
-			rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
+			rasterize = [&]() {
+				rasterize_triangles(shading_program, uniform, triangle_vertices, frameBuffer);
+			};
 		}
 		else {
-			rasterize_triangles(shading_program, uniform, triangle_vertices, frameBuffer);
-			if (shading == "flat") {
+			rasterize = [&]() {
+				rasterize_triangles(shading_program, uniform, triangle_vertices, frameBuffer);
 				uniform.color = Color(0, 0, 0, 1);
 				rasterize_lines(program, uniform, edge_vertices, 0.5, frameBuffer);
-			}
+			};
 		}
-	};
+	}
 
 	std::vector<uint8_t> image;
 	if (transformation) {
