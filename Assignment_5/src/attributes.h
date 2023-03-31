@@ -66,14 +66,14 @@ inline Color blend(const Color& back_color, const Color& front_color) {
 class VertexAttributes {
 	public:
 	Position position;
-	Color color;
 	Eigen::Vector3d normal;
+	Color color;
 
 	VertexAttributes(
 		const Position& position=Position(0, 0, 0, 1),
-		const Color& color=Color(0, 0, 0, 1),
-		const Eigen::Vector3d& normal=Eigen::Vector3d(0, 0, 0)
-	): position(position), color(color), normal(normal) {
+		const Eigen::Vector3d& normal=Eigen::Vector3d(0, 0, 0),
+		const Color& color=Color(0, 0, 0, 1)
+	): position(position), normal(normal), color(color) {
 	}
 
     // Interpolates the vertex attributes
@@ -87,10 +87,18 @@ class VertexAttributes {
     ) {
 		return VertexAttributes(
 			alpha * normalize_position(a.position) + beta * normalize_position(b.position) + gamma * normalize_position(c.position),
-			alpha * a.color    + beta * b.color    + gamma * c.color,
-			alpha * a.normal   + beta * b.normal   + gamma * c.normal
+			alpha * a.normal   + beta * b.normal   + gamma * c.normal,
+			alpha * a.color    + beta * b.color    + gamma * c.color
 		);
     }
+
+	VertexAttributes transform(const Eigen::Matrix4d& transformation) const {
+		return VertexAttributes(
+			transformation * position,
+			position_to_position3(transformation * position3_to_position(normal)),
+			color
+		);
+	}
 };
 
 class FragmentAttributes {
@@ -156,4 +164,7 @@ class UniformAttributes {
 		ambient_light;
 	double obj_specular_exponent, alpha;
 	std::vector<Light> lights;
+	Eigen::Matrix4d transformation;
+	UniformAttributes(): transformation(Eigen::Matrix4d::Identity()) {
+	}
 };

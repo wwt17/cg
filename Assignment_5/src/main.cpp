@@ -97,6 +97,8 @@ void render_scene(
 	const std::string shading,
 	// Transformation
 	const bool transformation,
+	const int timesteps,
+	const int delay,
 	// Camera settings
 	const Vector3d camera_position,
 	const ProjectionType projection_type,
@@ -124,7 +126,9 @@ void render_scene(
 
 	Program program;
 	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return VertexAttributes(va.position, uniform.color);
+		VertexAttributes new_va = va.transform(uniform.transformation);
+		new_va.color = uniform.color;
+		return new_va;
 	};
 	program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
 		return FragmentAttributes(va.color, va.position);
@@ -147,7 +151,7 @@ void render_scene(
 			points[k] = vertices.row(facets(i, k));
 		Vector3d normal = (points[1] - points[0]).cross(points[2] - points[0]).normalized();
 		for (size_t k = 0; k < 3; ++k)
-			triangle_vertices.push_back(VertexAttributes(position3_to_position(points[k]), Color(0, 0, 0, 1), normal));
+			triangle_vertices.push_back(VertexAttributes(position3_to_position(points[k]), normal));
 	}
 
 	// Edges
@@ -192,8 +196,10 @@ void render_scene(
 		uniform.lights = lights;
 		uniform.alpha = alpha;
 		shading_program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
+			VertexAttributes new_va = va.transform(uniform.transformation);
+
 			const Vector3d ray_direction(0, 0, 1);
-			const Vector3d &p = position_to_position3(va.position), &N = va.normal;
+			const Vector3d &p = position_to_position3(new_va.position), &N = new_va.normal;
 
 			// Ambient light contribution
 			const Color ambient_color = uniform.obj_ambient_color.array() * uniform.ambient_light.array();
@@ -216,12 +222,12 @@ void render_scene(
 			}
 
 			// Rendering equation
-			Color C = ambient_color + lights_color;
+			new_va.color = ambient_color + lights_color;
 
 			//Set alpha
-			C(3) = uniform.alpha;
+			new_va.color(3) = uniform.alpha;
 
-			return VertexAttributes(va.position, C);
+			return new_va;
 		};
 		if (shading == "per-vertex") {
 			// Compute the per-vertex normals by averaging per-face normals
@@ -260,7 +266,25 @@ void render_scene(
 
 	std::vector<uint8_t> image;
 	if (transformation) {
-		// TODO
+		GifWriter g;
+		GifBegin(&g, filename.c_str(), frameBuffer.rows(), frameBuffer.cols(), delay);
+
+		for (int t = 0; t <= timesteps; t++) {
+			// Rotation
+			double theta = 2 * pi * t / timesteps;
+			uniform.transformation <<
+				cos(theta), 0, -sin(theta), 0,
+				         0, 1,           0, 0,
+				sin(theta), 0,  cos(theta), 0,
+				         0, 0,           0, 1;
+
+			frameBuffer.setConstant(FrameBufferAttributes());
+			rasterize();
+			framebuffer_to_uint8(frameBuffer, image);
+			GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
+		}
+
+		GifEnd(&g);
 	}
 	else {
 		rasterize();
@@ -281,6 +305,8 @@ int main(int argc, char *argv[]) {
 		{"shading",               required_argument, 0, 8  },
 		{"alpha",                 required_argument, 0, 'a'},
 		{"transformation",        no_argument,       0, 't'},
+		{"timesteps",             required_argument, 0, 9  },
+		{"delay",                 required_argument, 0, 10 },
 		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
@@ -298,6 +324,8 @@ int main(int argc, char *argv[]) {
 	std::string filename("triangle.png");
 	std::string shading("wireframe");
 	bool transformation = false;
+	int timesteps = 20;
+	int delay = 25;
 
 	int opt;
 	while ((opt = getopt_long(argc, argv, "w:h:f:p:a:", long_options, NULL)) != -1) {
@@ -319,6 +347,12 @@ int main(int argc, char *argv[]) {
 			break;
 		case 't':
 			transformation = true;
+			break;
+		case 9:
+			timesteps = atoi(optarg);
+			break;
+		case 10:
+			delay = atoi(optarg);
 			break;
 		case 1:
 			field_of_view = pi / 180 * atoi(optarg); // field of view in degree
@@ -371,6 +405,8 @@ int main(int argc, char *argv[]) {
     render_scene(
 		shading,
 		transformation,
+		timesteps,
+		delay,
 		camera_position,
 		projection_type,
 		focal_length,
