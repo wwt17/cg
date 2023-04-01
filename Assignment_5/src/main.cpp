@@ -169,7 +169,7 @@ void render_scene(
 		if (alpha == -1)
 			alpha = 1;
 		rasterize = [&]() {
-			uniform.color = Color(1, 1, 1, alpha);
+			uniform.color = Color(0, 1, 0, alpha);
 			rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 		};
 	}
