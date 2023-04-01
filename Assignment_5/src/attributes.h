@@ -92,10 +92,13 @@ class VertexAttributes {
 		);
     }
 
-	VertexAttributes transform(const Eigen::Matrix4d& transformation) const {
+	VertexAttributes transform(
+		const Eigen::Matrix4d& affine,
+		const Eigen::Matrix4d& rotation
+	) const {
 		return VertexAttributes(
-			transformation * position,
-			position_to_position3(transformation * position3_to_position(normal)),
+			affine * (rotation * position),
+			position_to_position3(rotation * position3_to_position(normal)),
 			color
 		);
 	}
@@ -164,7 +167,7 @@ class UniformAttributes {
 		ambient_light;
 	double obj_specular_exponent, alpha;
 	std::vector<Light> lights;
-	Eigen::Matrix4d transformation;
-	UniformAttributes(): transformation(Eigen::Matrix4d::Identity()) {
+	Eigen::Matrix4d affine, rotation;
+	UniformAttributes(): affine(Eigen::Matrix4d::Identity()), rotation(Eigen::Matrix4d::Identity()) {
 	}
 };

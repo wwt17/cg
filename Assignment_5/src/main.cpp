@@ -133,7 +133,7 @@ void render_scene(
 
 	Program program;
 	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		VertexAttributes new_va = va.transform(uniform.transformation);
+		VertexAttributes new_va = va.transform(uniform.affine, uniform.rotation);
 		new_va.color = uniform.color;
 		return new_va;
 	};
@@ -203,7 +203,7 @@ void render_scene(
 		uniform.lights = lights;
 		uniform.alpha = alpha;
 		shading_program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-			VertexAttributes new_va = va.transform(uniform.transformation);
+			VertexAttributes new_va = va.transform(uniform.affine, uniform.rotation);
 
 			const Vector3d ray_direction(0, 0, 1);
 			const Vector3d &p = position_to_position3(new_va.position), &N = new_va.normal;
@@ -279,11 +279,13 @@ void render_scene(
 		for (int t = 0; t <= timesteps; t++) {
 			// Rotation
 			double theta = 2 * pi * t / timesteps;
-			uniform.transformation <<
+			uniform.rotation <<
 				cos(theta), 0, -sin(theta), 0,
 				         0, 1,           0, 0,
 				sin(theta), 0,  cos(theta), 0,
 				         0, 0,           0, 1;
+			// Affine transformation
+			uniform.affine.block<3, 1>(0, 3) = (double)(t - timesteps) / timesteps * Vector3d(0, 0.7, -0.7);
 
 			frameBuffer.setConstant(FrameBufferAttributes());
 			rasterize();
