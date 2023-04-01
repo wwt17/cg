@@ -109,7 +109,6 @@ void render_scene(
 	// Camera settings
 	const Vector3d camera_position,
 	const ProjectionType projection_type,
-	const double focal_length,
 	const double field_of_view,
 	// Image size (h, w)
 	const size_t w,
@@ -118,14 +117,6 @@ void render_scene(
 ) {
     std::cout << "Simple rendering system for triangulated 3D models based on rasterization." << std::endl;
 
-	// TODO: will only be used in perspective camera
-    // The camera always points in the direction -z
-    // The sensor grid is at a distance 'focal_length' from the camera center,
-    // and covers an viewing angle given by 'field_of_view'.
-    double aspect_ratio = double(w) / double(h);
-    double image_y = tan(field_of_view / 2) * focal_length;
-    double image_x = aspect_ratio * image_y;
-
 	// The Framebuffer storing the image rendered by the rasterizer
 	Eigen::Matrix<FrameBufferAttributes,Eigen::Dynamic,Eigen::Dynamic> frameBuffer(w, h);
 
@@ -133,9 +124,9 @@ void render_scene(
 
 	Program program;
 	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		VertexAttributes new_va = va.transform(uniform.affine, uniform.rotation);
+		VertexAttributes new_va = va.transform(uniform.shift, uniform.rotation);
 		new_va.color = uniform.color;
-		return new_va;
+		return new_va.transform(uniform.view);
 	};
 	program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
 		return FragmentAttributes(va.color, va.position);
@@ -203,7 +194,7 @@ void render_scene(
 		uniform.lights = lights;
 		uniform.alpha = alpha;
 		shading_program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-			VertexAttributes new_va = va.transform(uniform.affine, uniform.rotation);
+			VertexAttributes new_va = va.transform(uniform.shift, uniform.rotation);
 
 			const Vector3d ray_direction(0, 0, 1);
 			const Vector3d &p = position_to_position3(new_va.position), &N = new_va.normal;
@@ -234,7 +225,7 @@ void render_scene(
 			//Set alpha
 			new_va.color(3) = uniform.alpha;
 
-			return new_va;
+			return new_va.transform(uniform.view);
 		};
 		if (shading == "per-vertex") {
 			// Compute the per-vertex normals by averaging per-face normals
@@ -271,12 +262,37 @@ void render_scene(
 		}
 	}
 
-	Matrix4d view = Matrix4d::Identity();
-	if (aspect_ratio < 1)
-		view(1, 1) = aspect_ratio;
-	else
-		view(0, 0) = 1 / aspect_ratio;
-	uniform.affine = view * uniform.affine;
+    // The camera always points in the direction -z
+    // and covers an viewing angle given by 'field_of_view'.
+    const double aspect_ratio = double(w) / double(h);
+    double image_x, image_y;
+	const double near = 1 - camera_position(2), far = -1 - camera_position(2);
+	Matrix4d projective, orth = Matrix4d::Identity();
+	if (projection_type == orthographic) {
+		projective = Matrix4d::Identity();
+		if (aspect_ratio > 1) {
+			image_y = 1;
+			image_x = image_y * aspect_ratio;
+		}
+		else {
+			image_x = 1;
+			image_y = image_x / aspect_ratio;
+		}
+	}
+	else if (projection_type == perspective) {
+		projective <<
+			near,    0,        0,         0,
+			   0, near,        0,         0,
+			   0,    0, near+far, -far*near,
+			   0,    0,        1,         0;
+		image_y = tan(field_of_view / 2) * -near;
+		image_x = image_y * aspect_ratio;
+	}
+	orth(0, 0) = 1/image_x;
+	orth(1, 1) = 1/image_y;
+	Matrix4d camera_shift = Matrix4d::Identity();
+	camera_shift.block<3, 1>(0, 3) = -camera_position;
+	uniform.view = orth * camera_shift.inverse() * projective * camera_shift;
 
 	std::vector<uint8_t> image;
 	if (transformation) {
@@ -291,10 +307,8 @@ void render_scene(
 				         0, 1,           0, 0,
 				sin(theta), 0,  cos(theta), 0,
 				         0, 0,           0, 1;
-			// Affine transformation
-			uniform.affine = Matrix4d::Identity();
-			uniform.affine.block<3, 1>(0, 3) = (double)(t - timesteps) / timesteps * Vector3d(0, 0.7, -0.7);
-			uniform.affine = view * uniform.affine;
+			// Shift
+			uniform.shift.block<3, 1>(0, 3) = (double)(t - timesteps) / timesteps * Vector3d(0, 0.7, 1.8);
 
 			frameBuffer.setConstant(FrameBufferAttributes());
 			rasterize();
@@ -325,7 +339,6 @@ int main(int argc, char *argv[]) {
 		{"transformation",        no_argument,       0, 't'},
 		{"timesteps",             required_argument, 0, 9  },
 		{"delay",                 required_argument, 0, 10 },
-		{"focal_length",          required_argument, 0, 'f'},
 		{"field_of_view",         required_argument, 0, 1  },
 		{"projection_type",       required_argument, 0, 'p'},
 		{"obj_specular_exponent", required_argument, 0, 2  },
@@ -334,19 +347,18 @@ int main(int argc, char *argv[]) {
 	};
 
 	//Camera settings
-	const Vector3d camera_position(0, 0, 2);
+	Vector3d camera_position(0, 0, 2);
 	ProjectionType projection_type = perspective;
-	double focal_length = 2;
 	double field_of_view = pi / 4; // 45 degrees
 	size_t w = 500, h = 500;
 	std::string filename("triangle.png");
 	std::string shading("wireframe");
 	bool transformation = false;
-	int timesteps = 20;
-	int delay = 25;
+	int timesteps = 50;
+	int delay = 10;
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "w:h:f:p:a:", long_options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "w:h:n:p:a:t", long_options, NULL)) != -1) {
 		switch (opt) {
 		case 0:
 			filename = optarg;
@@ -384,8 +396,8 @@ int main(int argc, char *argv[]) {
 		case 'h':
 			h = atoi(optarg);
 			break;
-		case 'f':
-			focal_length = atof(optarg);
+		case 'n':
+			camera_position(2) = atof(optarg) + 1;
 			break;
 		case 'p':
 			if (optarg[0] == 'p') {
@@ -427,7 +439,6 @@ int main(int argc, char *argv[]) {
 		delay,
 		camera_position,
 		projection_type,
-		focal_length,
 		field_of_view,
 		w, h,
 		filename);

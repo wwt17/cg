@@ -102,6 +102,16 @@ class VertexAttributes {
 			color
 		);
 	}
+
+	VertexAttributes transform(
+		const Eigen::Matrix4d& affine
+	) const {
+		return VertexAttributes(
+			affine * position,
+			normal,
+			color
+		);
+	}
 };
 
 class FragmentAttributes {
@@ -122,9 +132,9 @@ class FrameBufferAttributes {
 	class Layer {
 	public:
 		Color color;
-		double depth;
+		double z;
 
-		Layer(const Color& color, const double depth): color(color), depth(depth) {
+		Layer(const Color& color, const double z): color(color), z(z) {
 		}
 	};
 
@@ -134,7 +144,7 @@ class FrameBufferAttributes {
 	FrameBufferAttributes(
 		const Color& bg_color=Color(0, 0, 0, 0)
 	): color((bg_color * 255).cast<uint8_t>()) {
-		layers.emplace_back(bg_color, inf);
+		layers.emplace_back(bg_color, -inf);
 	}
 
 	void update_color() {
@@ -148,11 +158,11 @@ class FrameBufferAttributes {
 
 	void blend_with(
 		const Color& blended_color,
-		const double blended_depth
+		const double blended_z
 	) {
 		auto it = layers.begin();
-		while (it != layers.end() && it->depth > blended_depth - 5e-3) ++it;
-		layers.insert(it, Layer(blended_color, blended_depth));
+		while (it != layers.end() && it->z < blended_z + 5e-3) ++it;
+		layers.insert(it, Layer(blended_color, blended_z));
 		update_color();
 	}
 };
@@ -167,7 +177,11 @@ class UniformAttributes {
 		ambient_light;
 	double obj_specular_exponent, alpha;
 	std::vector<Light> lights;
-	Eigen::Matrix4d affine, rotation;
-	UniformAttributes(): affine(Eigen::Matrix4d::Identity()), rotation(Eigen::Matrix4d::Identity()) {
+	Eigen::Matrix4d rotation, shift, view;
+	UniformAttributes():
+		rotation(Eigen::Matrix4d::Identity()),
+		shift(Eigen::Matrix4d::Identity()),
+		view(Eigen::Matrix4d::Identity())
+	{
 	}
 };
