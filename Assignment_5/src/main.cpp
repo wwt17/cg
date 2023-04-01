@@ -271,6 +271,13 @@ void render_scene(
 		}
 	}
 
+	Matrix4d view = Matrix4d::Identity();
+	if (aspect_ratio < 1)
+		view(1, 1) = aspect_ratio;
+	else
+		view(0, 0) = 1 / aspect_ratio;
+	uniform.affine = view * uniform.affine;
+
 	std::vector<uint8_t> image;
 	if (transformation) {
 		GifWriter g;
@@ -285,7 +292,9 @@ void render_scene(
 				sin(theta), 0,  cos(theta), 0,
 				         0, 0,           0, 1;
 			// Affine transformation
+			uniform.affine = Matrix4d::Identity();
 			uniform.affine.block<3, 1>(0, 3) = (double)(t - timesteps) / timesteps * Vector3d(0, 0.7, -0.7);
+			uniform.affine = view * uniform.affine;
 
 			frameBuffer.setConstant(FrameBufferAttributes());
 			rasterize();
