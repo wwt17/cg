@@ -71,13 +71,20 @@ void setup_scene() {
 
 	//Refit the mesh into [-1, +1]^3
 	if (refit_mesh) {
-		Matrix<double, 1, 3>
-			min_coord = vertices.colwise().minCoeff(),
-			max_coord = vertices.colwise().maxCoeff(),
-			mid_coord = (min_coord + max_coord) / 2;
-		double resize_length = (max_coord - min_coord).maxCoeff();
-		vertices.rowwise() -= mid_coord;  // centering
-		vertices /= resize_length / 2;  // rescaling
+		Vector3d center(0, 0, 0);
+		for (size_t i = 0; i < nf; ++i) {
+			Vector3d triangle_center(0, 0, 0);
+			for (size_t k = 0; k < 3; ++k)
+				triangle_center += vertices.row(facets(i, k)).transpose();
+			triangle_center /= 3;
+			center += triangle_center;
+		}
+		center /= nf;
+		vertices.rowwise() -= center.transpose();  // centering
+		double rad = 0;
+		for (size_t i = 0; i < nv; ++i)
+			rad = std::max(rad, vertices.row(i).norm());
+		vertices /= rad;  // rescaling
 	}
 
     //Lights
