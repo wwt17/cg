@@ -22,6 +22,9 @@ public:
 	Triangle(const VertexAttributes _vas[3]) {
 		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
 	}
+	void move(const Position4& v) {
+		for (int i = 0; i < 3; i++) vas[i].position += v;
+	}
 };
 
 
@@ -85,7 +88,7 @@ int main(int argc, char *argv[]) {
 
 	// triangles
 	std::map<int, Triangle> triangles;
-	int new_obj_id = 1;
+	int new_obj_id = 1, selected_obj_id = 0;
 
 	// new triangle
 	int n_new_vertices = 0;
@@ -98,7 +101,7 @@ int main(int argc, char *argv[]) {
     SDLViewer viewer;
     viewer.init("Viewer Example", width, height);
 
-	auto sdl_xy_to_position4 = [&](const int x, const int y) {
+	auto sdl_position_to_position4 = [&](const int x, const int y) {
 		return Position4(
 			(double(x)/double(width) * 2) - 1,
 			(double(height-1-y)/double(height) * 2) - 1,
@@ -106,11 +109,19 @@ int main(int argc, char *argv[]) {
 			1
 		);
 	};
+	auto sdl_vector_to_position4 = [&](const int x, const int y) {
+		return Position4(
+			x/double(width) * 2,
+			-y/double(height) * 2,
+			0,
+			0
+		);
+	};
 
     viewer.mouse_move = [&](int x, int y, int xrel, int yrel) {
-		//std::cerr << "mouse_move: " << std::endl;
+		//std::cerr << "mouse_move(x=" << x << ", y=" << y << ", xrel=" << xrel << ", yrel=" << yrel << ")" << std::endl;
 
-		Position4 position = sdl_xy_to_position4(x, y);
+		Position4 position = sdl_position_to_position4(x, y);
 
 		switch (mode) {
 		case 'i':
@@ -120,6 +131,12 @@ int main(int argc, char *argv[]) {
 			}
 			break;
 		case 'o':
+			if (selected_obj_id) {
+				auto v = sdl_vector_to_position4(xrel, yrel);
+				//std::cerr << "move triangle " << selected_obj_id << " by " << v.transpose() << std::endl;
+				triangles[selected_obj_id].move(v);
+				viewer.redraw_next = true;
+			}
 			break;
 		case 'p':
 			break;
@@ -130,29 +147,44 @@ int main(int argc, char *argv[]) {
     };
 
     viewer.mouse_pressed = [&](int x, int y, bool is_pressed, int button, int clicks) {
-		std::cerr << "mouse_pressed: " << "is_pressed = " << is_pressed << std::endl;
-		if (is_pressed)
-			return;
-
-		Position4 position = sdl_xy_to_position4(x, y);
+		std::cerr << "mouse_pressed(x=" << x << ", y=" << y << ", is_pressed=" << is_pressed << ")" << std::endl;
 
 		switch (mode) {
 		case 'i':
-			new_vertices[n_new_vertices].position = position;
-			n_new_vertices++;
-			if (n_new_vertices == 3) {
-				for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
-				triangles[new_obj_id++] = Triangle(new_vertices);
-				n_new_vertices = 0;
-			}
-			else {
+			if (!is_pressed) {
+				Position4 position = sdl_position_to_position4(x, y);
 				new_vertices[n_new_vertices].position = position;
+				n_new_vertices++;
+				if (n_new_vertices == 3) {
+					for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
+					triangles[new_obj_id++] = Triangle(new_vertices);
+					n_new_vertices = 0;
+				}
+				else {
+					new_vertices[n_new_vertices].position = position;
+				}
+				viewer.redraw_next = true;
 			}
-			viewer.redraw_next = true;
 			break;
 		case 'o':
+			if (is_pressed) {
+				selected_obj_id = frameBuffer(x, height-1-y).obj_id;
+				std::cerr << "selected_obj_id = " << selected_obj_id << std::endl;
+			}
+			else {
+				selected_obj_id = 0;
+			}
 			break;
 		case 'p':
+			if (is_pressed) {
+				selected_obj_id = frameBuffer(x, height-1-y).obj_id;
+				std::cerr << "selected_obj_id = " << selected_obj_id << std::endl;
+				if (selected_obj_id) {
+					triangles.erase(selected_obj_id);
+					selected_obj_id = 0;
+				}
+				viewer.redraw_next = true;
+			}
 			break;
 		default:
 			break;
@@ -180,7 +212,7 @@ int main(int argc, char *argv[]) {
         // Clear the framebuffer
         for (size_t i = 0; i < frameBuffer.rows(); i++)
             for (size_t j = 0; j < frameBuffer.cols(); j++)
-                frameBuffer(i,j).color << 0,0,0,1;
+                frameBuffer(i,j) = FrameBufferAttributes();
 
 		std::cerr << "n_triangles = " << triangles.size() << std::endl;
 		std::vector<VertexAttributes> triangle_vertices;
