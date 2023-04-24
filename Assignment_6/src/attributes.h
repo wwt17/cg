@@ -8,11 +8,22 @@ typedef Eigen::Vector4d Color;
 typedef Eigen::Matrix<uint8_t,4,1> Color8;
 
 
+inline Color8 color_to_color8(const Color& color) {
+	return (255*color).cast<uint8_t>();
+}
+
+
 class VertexAttributes {
-	public:
-	VertexAttributes(double x = 0, double y = 0, double z = 0, double w = 1) {
-		position << x,y,z,w;
-		color << 1,1,1,1;
+public:
+	Position4 position;
+	Color color;
+	int obj_id;
+
+	VertexAttributes(
+		const Position4& position=Position4(0,0,0,1),
+		const Color& color=Color(1,1,1,1),
+		const int obj_id=0
+	): position(position), color(color), obj_id(obj_id) {
 	}
 
     // Interpolates the vertex attributes
@@ -24,34 +35,38 @@ class VertexAttributes {
         const double beta, 
         const double gamma
     ) {
-        VertexAttributes r;
-        r.position = alpha*a.position + beta*b.position + gamma*c.position;
-		r.color = alpha*a.color + beta*b.color + gamma*c.color;
-        return r;
+        return VertexAttributes(
+			alpha*a.position + beta*b.position + gamma*c.position,
+			alpha*a.color + beta*b.color + gamma*c.color,
+			a.obj_id
+		);
     }
-
-	Position4 position;
-	Color color;
 };
 
 class FragmentAttributes {
-	public:
-	FragmentAttributes(double r = 0, double g = 0, double b = 0, double a = 1) {
-		color << r,g,b,a;
-	}
-
+public:
 	Color color;
+	int obj_id;
+
+	FragmentAttributes(
+		const Color& color=Color(0,0,0,1),
+		const int obj_id=0
+	): color(color), obj_id(obj_id) {
+	}
 };
 
 class FrameBufferAttributes {
-	public:
-	FrameBufferAttributes(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0, uint8_t a = 255) {
-		color << r,g,b,a;
-	}
-
+public:
 	Color8 color;
+	int obj_id;
+
+	FrameBufferAttributes(
+		const Color8& color=Color8(0,0,0,255),
+		const int obj_id=0
+	): color(color), obj_id(obj_id) {
+	}
 };
 
 class UniformAttributes {
-	public:
+public:
 };

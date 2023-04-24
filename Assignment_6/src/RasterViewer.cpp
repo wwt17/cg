@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <iostream>
+#include <map>
 #include <getopt.h>
 
 #include "raster.h"
@@ -11,6 +12,18 @@
 // Image writing library
 #define STB_IMAGE_WRITE_IMPLEMENTATION // Do not include this line twice in your project!
 #include "stb_image_write.h"
+
+
+class Triangle {
+public:
+	VertexAttributes vas[3];
+	Triangle() {
+	}
+	Triangle(const VertexAttributes _vas[3]) {
+		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
+	}
+};
+
 
 int main(int argc, char *argv[]) {
 	static struct option long_options[] = {
@@ -62,16 +75,18 @@ int main(int argc, char *argv[]) {
 
 	// The fragment shader uses a fixed color
 	program.FragmentShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return FragmentAttributes(va.color(0),va.color(1),va.color(2));
+		return FragmentAttributes(va.color, va.obj_id);
 	};
 
 	// The blending shader converts colors between 0 and 1 to uint8
 	program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
-		return FrameBufferAttributes(fa.color[0]*255,fa.color[1]*255,fa.color[2]*255,fa.color[3]*255);
+		return FrameBufferAttributes(color_to_color8(fa.color), fa.obj_id);
 	};
 
-	// triangle vertices
-	std::vector<VertexAttributes> triangle_vertices;
+	// triangles
+	std::map<int, Triangle> triangles;
+	int new_obj_id = 1;
+
 	// new triangle
 	int n_new_vertices = 0;
 	VertexAttributes new_vertices[3];
@@ -126,8 +141,8 @@ int main(int argc, char *argv[]) {
 			new_vertices[n_new_vertices].position = position;
 			n_new_vertices++;
 			if (n_new_vertices == 3) {
-				for (int i = 0; i < n_new_vertices; i++)
-					triangle_vertices.push_back(new_vertices[i]);
+				for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
+				triangles[new_obj_id++] = Triangle(new_vertices);
 				n_new_vertices = 0;
 			}
 			else {
@@ -167,9 +182,14 @@ int main(int argc, char *argv[]) {
             for (size_t j = 0; j < frameBuffer.cols(); j++)
                 frameBuffer(i,j).color << 0,0,0,1;
 
-		std::cerr << "n_triangle_vertices = " << triangle_vertices.size() << std::endl;
+		std::cerr << "n_triangles = " << triangles.size() << std::endl;
+		std::vector<VertexAttributes> triangle_vertices;
+		for (const auto& id_obj: triangles) {
+			const Triangle& triangle = id_obj.second;
+			for (int i = 0; i < 3; i++) triangle_vertices.push_back(triangle.vas[i]);
+		}
 		for (auto& va: triangle_vertices)
-			std::cerr << va.color.transpose() << std::endl;
+			std::cerr << va.position.transpose() << std::endl;
 		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 
 		std::vector<VertexAttributes> line_vertices;
@@ -179,9 +199,9 @@ int main(int argc, char *argv[]) {
 				line_vertices.push_back(new_vertices[i]);
 				line_vertices.push_back(new_vertices[j]);
 			}
-		std::cerr << "n_line_vertices = " << line_vertices.size() << std::endl;
+		std::cerr << "n_lines = " << line_vertices.size() / 2 << std::endl;
 		for (auto& va: line_vertices)
-			std::cerr << va.color.transpose() << std::endl;
+			std::cerr << va.position.transpose() << std::endl;
 		rasterize_lines(program, uniform, line_vertices, line_thickness, frameBuffer);
 
         // Buffer for exchanging data between rasterizer and sdl viewer
