@@ -5,7 +5,7 @@
 #include <Eigen/Core>
 
 
-const double pi = acos(-1);
+const double inf = 1/0., pi = acos(-1);
 
 
 typedef Eigen::Vector4d Position4;
@@ -14,17 +14,21 @@ typedef Eigen::Vector4d Color;
 typedef Eigen::Matrix<uint8_t,4,1> Color8;
 
 
+// position utils
+
 inline Position4 normalize(const Position4& position) {
 	return position / position[3];
 }
 
+inline double sqr_distance(const Position4& x, const Position4& y) {
+	return (normalize(y) - normalize(x)).squaredNorm();
+}
 
 inline Transform4 movement(const Position4& v) {
 	Transform4 transform; transform.setIdentity();
 	transform.block<4,1>(0,3) += v;
 	return transform;
 }
-
 
 inline Transform4 rotation_xy(const double theta) {
 	Transform4 transform; transform.setZero();
@@ -37,12 +41,10 @@ inline Transform4 rotation_xy(const double theta) {
 	return transform;
 }
 
-
 inline Transform4 rotation_xy(const double theta, const Position4& center) {
 	Position4 v = normalize(center); v[3] = 0;
 	return movement(v) * rotation_xy(theta) * movement(-v);
 }
-
 
 inline Transform4 scaling(const double s) {
 	Transform4 transform; transform.setZero();
@@ -53,16 +55,48 @@ inline Transform4 scaling(const double s) {
 	return transform;
 }
 
-
 inline Transform4 scaling(const double s, const Position4& center) {
 	Position4 v = normalize(center); v[3] = 0;
 	return movement(v) * scaling(s) * movement(-v);
 }
 
 
+// color utils
+
 inline Color8 color_to_color8(const Color& color) {
 	return (255*color).cast<uint8_t>();
 }
+
+inline Color color8_to_color(const Color8& color) {
+	return color.cast<double>() / 255;
+}
+
+inline Color no_transparency(const Color& color) {
+	return Color(color[0], color[1], color[2], 1);
+}
+
+inline Color blend(const Color& back_color, const Color& front_color) {
+	const Color obscured_back_color = (1 - front_color[3]) * back_color[3] * no_transparency(back_color),
+	            obscured_front_color = front_color[3] * no_transparency(front_color);
+	Color new_color = obscured_front_color + obscured_back_color;
+	new_color.topRows<3>() /= new_color(3);
+	return new_color;
+}
+
+
+const Color colors[11] = {
+	color8_to_color(Color8(255, 255, 255, 255)),
+	color8_to_color(Color8(158,   1,  66, 255)),
+	color8_to_color(Color8(213,  62,  79, 255)),
+	color8_to_color(Color8(244, 109,  67, 255)),
+	color8_to_color(Color8(253, 174,  97, 255)),
+	color8_to_color(Color8(254, 224, 139, 255)),
+	color8_to_color(Color8(230, 245, 152, 255)),
+	color8_to_color(Color8(171, 221, 164, 255)),
+	color8_to_color(Color8(102, 194, 165, 255)),
+	color8_to_color(Color8( 50, 136, 189, 255)),
+	color8_to_color(Color8( 94,  79, 162, 255))
+};
 
 
 class VertexAttributes {

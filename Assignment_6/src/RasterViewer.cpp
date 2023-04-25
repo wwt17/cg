@@ -23,10 +23,10 @@ public:
 		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
 	}
 	void selected() {
-		for (int i = 0; i < 3; i++) vas[i].color = Color(0.5, 0.5, 0.5, 1);
+		for (int i = 0; i < 3; i++) vas[i].color[3] = 0.5;
 	}
 	void unselected() {
-		for (int i = 0; i < 3; i++) vas[i].color = Color(1, 1, 1, 1);
+		for (int i = 0; i < 3; i++) vas[i].color[3] = 1;
 	}
 	void transform(const Transform4& transform) {
 		for (int i = 0; i < 3; i++) vas[i].position = transform * vas[i].position;
@@ -94,13 +94,14 @@ int main(int argc, char *argv[]) {
 
 	// The blending shader converts colors between 0 and 1 to uint8
 	program.BlendingShader = [](const FragmentAttributes& fa, const FrameBufferAttributes& previous) {
-		return FrameBufferAttributes(color_to_color8(fa.color), fa.obj_id);
+		return FrameBufferAttributes(color_to_color8(blend(color8_to_color(previous.color), fa.color)), fa.obj_id);
 	};
 
 	// triangles
 	std::map<int, Triangle> triangles;
 	int new_obj_id = 1, selected_obj_id = 0;
 	bool moving_selected_obj = false;
+	VertexAttributes *selected_vertex = NULL;
 
 	// new triangle
 	int n_new_vertices = 0;
@@ -205,6 +206,25 @@ int main(int argc, char *argv[]) {
 				viewer.redraw_next = true;
 			}
 			break;
+		case 'c':
+			if (!is_pressed) {
+				Position4 position = sdl_position_to_position4(x, y);
+				selected_vertex = NULL;
+				double nearest_sqr_distance = inf;
+				// find vertex nearest to the mouse
+				for (auto& id_obj: triangles) {
+					Triangle& triangle = id_obj.second;
+					for (int i = 0; i < 3; i++) {
+						VertexAttributes& vertex = triangle.vas[i];
+						double cur_sqr_distance = sqr_distance(position, vertex.position);
+						if (cur_sqr_distance < nearest_sqr_distance) {
+							nearest_sqr_distance = cur_sqr_distance;
+							selected_vertex = &vertex;
+						}
+					}
+				}
+			}
+			break;
 		default:
 			break;
 		}
@@ -222,13 +242,17 @@ int main(int argc, char *argv[]) {
 
 		switch (key) {
 		case 'i':
+		case 'o':
 		case 'p':
-			if (selected_obj_id) {
+		case 'c':
+			if (selected_obj_id && key != 'o') {
 				triangles[selected_obj_id].unselected();
 				selected_obj_id = 0;
 				viewer.redraw_next = true;
 			}
-		case 'o':
+			if (selected_vertex && key != 'c') {
+				selected_vertex = NULL;
+			}
 			mode = key;
 			break;
 		case 'h':
@@ -249,6 +273,10 @@ int main(int argc, char *argv[]) {
 			}
 			break;
 		default:
+			if (mode == 'c' && selected_vertex && key >= '0' && key <= '9') {
+				selected_vertex->color = colors[key-'0'];
+				viewer.redraw_next = true;
+			}
 			break;
 		}
     };
@@ -259,14 +287,13 @@ int main(int argc, char *argv[]) {
             for (size_t j = 0; j < frameBuffer.cols(); j++)
                 frameBuffer(i,j) = FrameBufferAttributes();
 
-		std::cerr << "n_triangles = " << triangles.size() << std::endl;
+		//std::cerr << "n_triangles = " << triangles.size() << std::endl;
 		std::vector<VertexAttributes> triangle_vertices;
 		for (const auto& id_obj: triangles) {
 			const Triangle& triangle = id_obj.second;
 			for (int i = 0; i < 3; i++) triangle_vertices.push_back(triangle.vas[i]);
 		}
-		for (auto& va: triangle_vertices)
-			std::cerr << va.position.transpose() << std::endl;
+		//for (auto& va: triangle_vertices) std::cerr << va.position.transpose() << std::endl;
 		rasterize_triangles(program, uniform, triangle_vertices, frameBuffer);
 
 		std::vector<VertexAttributes> line_vertices;
@@ -276,9 +303,8 @@ int main(int argc, char *argv[]) {
 				line_vertices.push_back(new_vertices[i]);
 				line_vertices.push_back(new_vertices[j]);
 			}
-		std::cerr << "n_lines = " << line_vertices.size() / 2 << std::endl;
-		for (auto& va: line_vertices)
-			std::cerr << va.position.transpose() << std::endl;
+		//std::cerr << "n_lines = " << line_vertices.size() / 2 << std::endl;
+		//for (auto& va: line_vertices) std::cerr << va.position.transpose() << std::endl;
 		rasterize_lines(program, uniform, line_vertices, line_thickness, frameBuffer);
 
         // Buffer for exchanging data between rasterizer and sdl viewer
