@@ -24,7 +24,7 @@ inline double sqr_distance(const Position4& x, const Position4& y) {
 	return (normalize(y) - normalize(x)).squaredNorm();
 }
 
-inline Transform4 movement(const Position4& v) {
+inline Transform4 translation(const Position4& v) {
 	Transform4 transform; transform.setIdentity();
 	transform.block<4,1>(0,3) += v;
 	return transform;
@@ -43,7 +43,7 @@ inline Transform4 rotation_xy(const double theta) {
 
 inline Transform4 rotation_xy(const double theta, const Position4& center) {
 	Position4 v = normalize(center); v[3] = 0;
-	return movement(v) * rotation_xy(theta) * movement(-v);
+	return translation(v) * rotation_xy(theta) * translation(-v);
 }
 
 inline Transform4 scaling(const double s) {
@@ -57,7 +57,7 @@ inline Transform4 scaling(const double s) {
 
 inline Transform4 scaling(const double s, const Position4& center) {
 	Position4 v = normalize(center); v[3] = 0;
-	return movement(v) * scaling(s) * movement(-v);
+	return translation(v) * scaling(s) * translation(-v);
 }
 
 

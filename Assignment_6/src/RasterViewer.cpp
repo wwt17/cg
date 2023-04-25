@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
 		case 'o':
 			if (selected_obj_id && moving_selected_obj) {
 				auto v = sdl_vector_to_position4(xrel, yrel);
-				triangles[selected_obj_id].transform(movement(v));
+				triangles[selected_obj_id].transform(translation(v));
 				viewer.redraw_next = true;
 			}
 			break;
