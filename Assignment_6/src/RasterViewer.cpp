@@ -66,6 +66,7 @@ int main(int argc, char *argv[]) {
 		}
 		catch (const std::out_of_range& oor) {
 		}
+		new_va.position = uniform.view_transform * new_va.position;
 		return new_va;
 	};
 
@@ -98,12 +99,12 @@ int main(int argc, char *argv[]) {
     viewer.init("Viewer Example", width, height);
 
 	auto sdl_position_to_position4 = [&](const int x, const int y) {
-		return Position4(
+		return Position4(uniform.view_transform.inverse() * Position4(
 			(double(x)/double(width) * 2) - 1,
 			(double(height-1-y)/double(height) * 2) - 1,
 			0,
 			1
-		);
+		));
 	};
 	auto sdl_vector_to_position4 = [&](const int x, const int y) {
 		return Position4(sdl_position_to_position4(x, y) - sdl_position_to_position4(0, 0));
@@ -250,6 +251,13 @@ int main(int argc, char *argv[]) {
 				viewer.redraw_next = true;
 			}
 			break;
+		case '=': // temporary solution for not recognizing '+'
+		case '+': uniform.view_transform = scaling(1+0.2) * uniform.view_transform; viewer.redraw_next = true; break;
+		case '-': uniform.view_transform = scaling(1-0.2) * uniform.view_transform; viewer.redraw_next = true; break;
+		case 'w': uniform.view_transform = translation(Position4(0,-2*0.2,0,0)) * uniform.view_transform; viewer.redraw_next = true; break;
+		case 'a': uniform.view_transform = translation(Position4(+2*0.2,0,0,0)) * uniform.view_transform; viewer.redraw_next = true; break;
+		case 's': uniform.view_transform = translation(Position4(0,+2*0.2,0,0)) * uniform.view_transform; viewer.redraw_next = true; break;
+		case 'd': uniform.view_transform = translation(Position4(-2*0.2,0,0,0)) * uniform.view_transform; viewer.redraw_next = true; break;
 		default:
 			if (mode == 'c' && selected_vertex && key >= '0' && key <= '9') {
 				selected_vertex->color = colors[key-'0'];

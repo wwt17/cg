@@ -184,4 +184,8 @@ public:
 class UniformAttributes {
 public:
 	std::map<int, Triangle> triangles;
+	Transform4 view_transform;
+	UniformAttributes() {
+		view_transform.setIdentity();
+	}
 };
