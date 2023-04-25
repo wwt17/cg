@@ -159,14 +159,6 @@ int main(int argc, char *argv[]) {
     viewer.mouse_pressed = [&](int x, int y, bool is_pressed, int button, int clicks) {
 		std::cerr << "mouse_pressed(x=" << x << ", y=" << y << ", is_pressed=" << is_pressed << ")" << std::endl;
 
-		if (is_pressed && mode != 'o') {
-			if (selected_obj_id) {
-				triangles[selected_obj_id].unselected();
-				selected_obj_id = 0;
-				viewer.redraw_next = true;
-			}
-		}
-
 		switch (mode) {
 		case 'i':
 			if (!is_pressed) {
@@ -230,8 +222,13 @@ int main(int argc, char *argv[]) {
 
 		switch (key) {
 		case 'i':
-		case 'o':
 		case 'p':
+			if (selected_obj_id) {
+				triangles[selected_obj_id].unselected();
+				selected_obj_id = 0;
+				viewer.redraw_next = true;
+			}
+		case 'o':
 			mode = key;
 			break;
 		case 'h':
