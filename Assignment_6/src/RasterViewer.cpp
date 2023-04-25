@@ -22,6 +22,12 @@ public:
 	Triangle(const VertexAttributes _vas[3]) {
 		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
 	}
+	void selected() {
+		for (int i = 0; i < 3; i++) vas[i].color = Color(0.5, 0.5, 0.5, 1);
+	}
+	void unselected() {
+		for (int i = 0; i < 3; i++) vas[i].color = Color(1, 1, 1, 1);
+	}
 	void move(const Position4& v) {
 		for (int i = 0; i < 3; i++) vas[i].position += v;
 	}
@@ -89,6 +95,7 @@ int main(int argc, char *argv[]) {
 	// triangles
 	std::map<int, Triangle> triangles;
 	int new_obj_id = 1, selected_obj_id = 0;
+	bool moving_selected_obj = false;
 
 	// new triangle
 	int n_new_vertices = 0;
@@ -131,7 +138,7 @@ int main(int argc, char *argv[]) {
 			}
 			break;
 		case 'o':
-			if (selected_obj_id) {
+			if (selected_obj_id && moving_selected_obj) {
 				auto v = sdl_vector_to_position4(xrel, yrel);
 				//std::cerr << "move triangle " << selected_obj_id << " by " << v.transpose() << std::endl;
 				triangles[selected_obj_id].move(v);
@@ -143,11 +150,18 @@ int main(int argc, char *argv[]) {
 		default:
 			break;
 		}
-
     };
 
     viewer.mouse_pressed = [&](int x, int y, bool is_pressed, int button, int clicks) {
 		std::cerr << "mouse_pressed(x=" << x << ", y=" << y << ", is_pressed=" << is_pressed << ")" << std::endl;
+
+		if (mode != 'o') {
+			if (selected_obj_id) {
+				triangles[selected_obj_id].unselected();
+				selected_obj_id = 0;
+				viewer.redraw_next = true;
+			}
+		}
 
 		switch (mode) {
 		case 'i':
@@ -168,11 +182,19 @@ int main(int argc, char *argv[]) {
 			break;
 		case 'o':
 			if (is_pressed) {
+				if (selected_obj_id) {
+					triangles[selected_obj_id].unselected();
+					viewer.redraw_next = true;
+				}
 				selected_obj_id = frameBuffer(x, height-1-y).obj_id;
 				std::cerr << "selected_obj_id = " << selected_obj_id << std::endl;
+				if (selected_obj_id) {
+					triangles[selected_obj_id].selected();
+					moving_selected_obj = true;
+				}
 			}
 			else {
-				selected_obj_id = 0;
+				moving_selected_obj = false;
 			}
 			break;
 		case 'p':
@@ -189,6 +211,8 @@ int main(int argc, char *argv[]) {
 		default:
 			break;
 		}
+
+		viewer.update();
     };
 
     viewer.mouse_wheel = [&](int dx, int dy, bool is_direction_normal) {
