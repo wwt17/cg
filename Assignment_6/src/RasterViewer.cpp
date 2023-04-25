@@ -106,12 +106,7 @@ int main(int argc, char *argv[]) {
 		);
 	};
 	auto sdl_vector_to_position4 = [&](const int x, const int y) {
-		return Position4(
-			x/double(width) * 2,
-			-y/double(height) * 2,
-			0,
-			0
-		);
+		return Position4(sdl_position_to_position4(x, y) - sdl_position_to_position4(0, 0));
 	};
 
     viewer.mouse_move = [&](int x, int y, int xrel, int yrel) {
