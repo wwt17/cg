@@ -1,11 +1,63 @@
 #pragma once
 
+#include <cmath>
+
 #include <Eigen/Core>
 
 
+const double pi = acos(-1);
+
+
 typedef Eigen::Vector4d Position4;
+typedef Eigen::Matrix4d Transform4;
 typedef Eigen::Vector4d Color;
 typedef Eigen::Matrix<uint8_t,4,1> Color8;
+
+
+inline Position4 normalize(const Position4& position) {
+	return position / position[3];
+}
+
+
+inline Transform4 movement(const Position4& v) {
+	Transform4 transform; transform.setIdentity();
+	transform.block<4,1>(0,3) += v;
+	return transform;
+}
+
+
+inline Transform4 rotation_xy(const double theta) {
+	Transform4 transform; transform.setZero();
+	transform(0,0) = +cos(theta);
+	transform(0,1) = -sin(theta);
+	transform(1,0) = +sin(theta);
+	transform(1,1) = +cos(theta);
+	transform(2,2) = 1;
+	transform(3,3) = 1;
+	return transform;
+}
+
+
+inline Transform4 rotation_xy(const double theta, const Position4& center) {
+	Position4 v = normalize(center); v[3] = 0;
+	return movement(v) * rotation_xy(theta) * movement(-v);
+}
+
+
+inline Transform4 scaling(const double s) {
+	Transform4 transform; transform.setZero();
+	transform(0,0) = s;
+	transform(1,1) = s;
+	transform(2,2) = s;
+	transform(3,3) = 1;
+	return transform;
+}
+
+
+inline Transform4 scaling(const double s, const Position4& center) {
+	Position4 v = normalize(center); v[3] = 0;
+	return movement(v) * scaling(s) * movement(-v);
+}
 
 
 inline Color8 color_to_color8(const Color& color) {

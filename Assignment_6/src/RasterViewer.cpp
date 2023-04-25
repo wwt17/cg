@@ -28,8 +28,13 @@ public:
 	void unselected() {
 		for (int i = 0; i < 3; i++) vas[i].color = Color(1, 1, 1, 1);
 	}
-	void move(const Position4& v) {
-		for (int i = 0; i < 3; i++) vas[i].position += v;
+	void transform(const Transform4& transform) {
+		for (int i = 0; i < 3; i++) vas[i].position = transform * vas[i].position;
+	}
+	Position4 barycenter() const {
+		Position4 S(0, 0, 0, 0);
+		for (int i = 0; i < 3; i++) S += normalize(vas[i].position);
+		return S / 3;
 	}
 };
 
@@ -140,8 +145,7 @@ int main(int argc, char *argv[]) {
 		case 'o':
 			if (selected_obj_id && moving_selected_obj) {
 				auto v = sdl_vector_to_position4(xrel, yrel);
-				//std::cerr << "move triangle " << selected_obj_id << " by " << v.transpose() << std::endl;
-				triangles[selected_obj_id].move(v);
+				triangles[selected_obj_id].transform(movement(v));
 				viewer.redraw_next = true;
 			}
 			break;
@@ -155,7 +159,7 @@ int main(int argc, char *argv[]) {
     viewer.mouse_pressed = [&](int x, int y, bool is_pressed, int button, int clicks) {
 		std::cerr << "mouse_pressed(x=" << x << ", y=" << y << ", is_pressed=" << is_pressed << ")" << std::endl;
 
-		if (mode != 'o') {
+		if (is_pressed && mode != 'o') {
 			if (selected_obj_id) {
 				triangles[selected_obj_id].unselected();
 				selected_obj_id = 0;
@@ -191,6 +195,7 @@ int main(int argc, char *argv[]) {
 				if (selected_obj_id) {
 					triangles[selected_obj_id].selected();
 					moving_selected_obj = true;
+					viewer.redraw_next = true;
 				}
 			}
 			else {
@@ -220,12 +225,31 @@ int main(int argc, char *argv[]) {
 
     viewer.key_pressed = [&](char key, bool is_pressed, int modifier, int repeat) {
 		std::cerr << "key_pressed: " << "key = " << key << " is_pressed = " << is_pressed << std::endl;
+		if (!is_pressed)
+			return;
 
 		switch (key) {
 		case 'i':
 		case 'o':
 		case 'p':
 			mode = key;
+			break;
+		case 'h':
+		case 'j':
+		case 'k':
+		case 'l':
+			if (selected_obj_id) {
+				Triangle& triangle = triangles[selected_obj_id];
+				Transform4 transform;
+				switch (key) {
+					case 'h': transform = rotation_xy(-10/180.*pi, triangle.barycenter()); break;
+					case 'j': transform = rotation_xy(+10/180.*pi, triangle.barycenter()); break;
+					case 'k': transform = scaling(1+0.25, triangle.barycenter()); break;
+					case 'l': transform = scaling(1-0.25, triangle.barycenter()); break;
+				}
+				triangle.transform(transform);
+				viewer.redraw_next = true;
+			}
 			break;
 		default:
 			break;
