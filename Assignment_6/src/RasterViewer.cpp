@@ -5,6 +5,7 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <getopt.h>
 
 #include "raster.h"
@@ -12,31 +13,6 @@
 // Image writing library
 #define STB_IMAGE_WRITE_IMPLEMENTATION // Do not include this line twice in your project!
 #include "stb_image_write.h"
-
-
-class Triangle {
-public:
-	VertexAttributes vas[3];
-	Triangle() {
-	}
-	Triangle(const VertexAttributes _vas[3]) {
-		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
-	}
-	void selected() {
-		for (int i = 0; i < 3; i++) vas[i].color[3] = 0.5;
-	}
-	void unselected() {
-		for (int i = 0; i < 3; i++) vas[i].color[3] = 1;
-	}
-	void transform(const Transform4& transform) {
-		for (int i = 0; i < 3; i++) vas[i].position = transform * vas[i].position;
-	}
-	Position4 barycenter() const {
-		Position4 S(0, 0, 0, 0);
-		for (int i = 0; i < 3; i++) S += normalize(vas[i].position);
-		return S / 3;
-	}
-};
 
 
 int main(int argc, char *argv[]) {
@@ -84,7 +60,13 @@ int main(int argc, char *argv[]) {
 
 	// The vertex shader is the identity
 	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
-		return va;
+		VertexAttributes new_va = va;
+		try {
+			new_va.position = uniform.triangles.at(va.obj_id).transform * new_va.position;
+		}
+		catch (const std::out_of_range& oor) {
+		}
+		return new_va;
 	};
 
 	// The fragment shader uses a fixed color
@@ -98,7 +80,7 @@ int main(int argc, char *argv[]) {
 	};
 
 	// triangles
-	std::map<int, Triangle> triangles;
+	std::map<int, Triangle> &triangles = uniform.triangles;
 	int new_obj_id = 1, selected_obj_id = 0;
 	bool moving_selected_obj = false;
 	VertexAttributes *selected_vertex = NULL;
@@ -106,6 +88,7 @@ int main(int argc, char *argv[]) {
 	// new triangle
 	int n_new_vertices = 0;
 	VertexAttributes new_vertices[3];
+	for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
 	for (int i = 0; i < 3; i++) new_vertices[i].color = Color(1, 1, 1, 1);
 	// mode
 	char mode = 0;
@@ -146,7 +129,7 @@ int main(int argc, char *argv[]) {
 		case 'o':
 			if (selected_obj_id && moving_selected_obj) {
 				auto v = sdl_vector_to_position4(xrel, yrel);
-				triangles[selected_obj_id].transform(translation(v));
+				triangles[selected_obj_id].append_transform(translation(v));
 				viewer.redraw_next = true;
 			}
 			break;
@@ -167,8 +150,8 @@ int main(int argc, char *argv[]) {
 				new_vertices[n_new_vertices].position = position;
 				n_new_vertices++;
 				if (n_new_vertices == 3) {
-					for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
 					triangles[new_obj_id++] = Triangle(new_vertices);
+					for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
 					n_new_vertices = 0;
 				}
 				else {
@@ -216,7 +199,7 @@ int main(int argc, char *argv[]) {
 					Triangle& triangle = id_obj.second;
 					for (int i = 0; i < 3; i++) {
 						VertexAttributes& vertex = triangle.vas[i];
-						double cur_sqr_distance = sqr_distance(position, vertex.position);
+						double cur_sqr_distance = sqr_distance(position, triangle.transform * vertex.position);
 						if (cur_sqr_distance < nearest_sqr_distance) {
 							nearest_sqr_distance = cur_sqr_distance;
 							selected_vertex = &vertex;
@@ -268,7 +251,7 @@ int main(int argc, char *argv[]) {
 					case 'k': transform = scaling(1+0.25, triangle.barycenter()); break;
 					case 'l': transform = scaling(1-0.25, triangle.barycenter()); break;
 				}
-				triangle.transform(transform);
+				triangle.append_transform(transform);
 				viewer.redraw_next = true;
 			}
 			break;

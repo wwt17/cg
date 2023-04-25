@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <map>
 
 #include <Eigen/Core>
 
@@ -129,6 +130,7 @@ public:
     }
 };
 
+
 class FragmentAttributes {
 public:
 	Color color;
@@ -153,6 +155,33 @@ public:
 	}
 };
 
+class Triangle {
+public:
+	VertexAttributes vas[3];
+	Transform4 transform;
+	Triangle() {
+	}
+	Triangle(const VertexAttributes _vas[3]) {
+		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
+		transform.setIdentity();
+	}
+	void selected() {
+		for (int i = 0; i < 3; i++) vas[i].color[3] = 0.5;
+	}
+	void unselected() {
+		for (int i = 0; i < 3; i++) vas[i].color[3] = 1;
+	}
+	void append_transform(const Transform4& new_transform) {
+		transform = new_transform * transform;
+	}
+	Position4 barycenter() const {
+		Position4 S(0, 0, 0, 0);
+		for (int i = 0; i < 3; i++) S += normalize(vas[i].position);
+		return transform * (S / 3);
+	}
+};
+
 class UniformAttributes {
 public:
+	std::map<int, Triangle> triangles;
 };
