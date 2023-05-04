@@ -268,7 +268,9 @@ int main(int argc, char *argv[]) {
 					Triangle& triangle = id_obj.second;
 					triangle.remove_keyframe(cur_keyframe_id);
 				}
-				uniform.cur_frame_id = cur_keyframe_id * uniform.n_inter_frames; // jump to the next frame
+				if (cur_keyframe_id > 0)
+					cur_keyframe_id--;
+				uniform.cur_frame_id = cur_keyframe_id * uniform.n_inter_frames; // jump to the prev frame
 				uniform.n_keyframes--;
 			}
 			viewer.redraw_next = true;
