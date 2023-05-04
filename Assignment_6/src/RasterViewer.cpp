@@ -102,7 +102,9 @@ int main(int argc, char *argv[]) {
 	for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
 	for (int i = 0; i < 3; i++) new_vertices[i].color = Color(1, 1, 1, 1);
 	// mode
-	char mode = 0;
+	char mode = 'i';
+	// interpolation type
+	InterpolationType interpolation;
 
     // Initialize the viewer and the corresponding callbacks
     SDLViewer viewer;
@@ -243,6 +245,51 @@ int main(int argc, char *argv[]) {
 				selected_vertex = NULL;
 			}
 			mode = key;
+			break;
+		case '\'': // insert new keyframe after the last keyframe
+			uniform.cur_frame_id = (uniform.n_keyframes - 1) * uniform.n_inter_frames; // jump to the last frame
+		case ';':  // insert new keyframe after the current keyframe
+			{
+				uniform.n_keyframes++;
+				int cur_keyframe_id = uniform.cur_keyframe_id();
+				for (auto& id_obj: triangles) {
+					Triangle& triangle = id_obj.second;
+					triangle.insert_keyframe(cur_keyframe_id);
+				}
+				cur_keyframe_id++;
+				uniform.cur_frame_id = cur_keyframe_id * uniform.n_inter_frames; // jump to the new frame
+			}
+			viewer.redraw_next = true;
+			break;
+		case '/':  // remove the current keyframe
+			if (uniform.n_keyframes > 1) {
+				int cur_keyframe_id = uniform.cur_keyframe_id();
+				for (auto& id_obj: triangles) {
+					Triangle& triangle = id_obj.second;
+					triangle.remove_keyframe(cur_keyframe_id);
+				}
+				uniform.cur_frame_id = cur_keyframe_id * uniform.n_inter_frames; // jump to the next frame
+				uniform.n_keyframes--;
+			}
+			viewer.redraw_next = true;
+			break;
+		case '\\': // clear all (except the first) keyframes
+			{
+				for (auto& id_obj: triangles) {
+					Triangle& triangle = id_obj.second;
+					triangle.clear_keyframes();
+				}
+				uniform.cur_frame_id = 0;
+				uniform.n_keyframes = 1;
+			}
+			viewer.redraw_next = true;
+			break;
+		case ' ':  // play/advance the animation using linear interpolation
+		case '\t': // play/advance the animation using Bezier interpolation
+			interpolation = key == ' ' ? linear : bezier;
+			if (++uniform.cur_frame_id > (uniform.n_keyframes - 1) * uniform.n_inter_frames)
+				uniform.cur_frame_id = 0; // jump to the first frame
+			viewer.redraw_next = true;
 			break;
 		case 'h':
 		case 'j':

@@ -86,6 +86,10 @@ inline Color blend(const Color& back_color, const Color& front_color) {
 }
 
 
+// interpolation
+enum InterpolationType {linear, bezier};
+
+
 const Color colors[11] = {
 	color8_to_color(Color8(255, 255, 255, 255)),
 	color8_to_color(Color8(158,   1,  66, 255)),
@@ -172,6 +176,15 @@ public:
 	void unselected() {
 		for (int i = 0; i < 3; i++) vas[i].color[3] = 1;
 	}
+	void insert_keyframe(const int keyframe_id) {  // insert a new keyframe after this keyframe
+		transforms.insert(transforms.begin() + (keyframe_id + 1), transforms[keyframe_id]);
+	}
+	void remove_keyframe(const int keyframe_id) {
+		transforms.erase(transforms.begin() + keyframe_id);
+	}
+	void clear_keyframes() {
+		transforms.resize(1);
+	}
 	void append_transform(const Transform4& new_transform, const int keyframe_id) {
 		Transform4 &transform = transforms[keyframe_id];
 		transform = new_transform * transform;
@@ -182,7 +195,7 @@ public:
 		return transforms[keyframe_id] * (S / 3);
 	}
 	Transform4 transform_at_time(const double t) const {
-		return transforms[int(t)]; // TODO: implement interpolation
+		return transforms[int(t * (int(transforms.size()) - 1))]; // TODO: implement interpolation
 	}
 };
 
