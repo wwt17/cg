@@ -21,15 +21,19 @@ int main(int argc, char *argv[]) {
 		{"width"          , required_argument, 0, 'w'},
 		{"height"         , required_argument, 0, 'h'},
 		{"line_thickness" , required_argument, 0, 't'},
+		{"keyframe_seconds",required_argument, 0, 'k'},
+		{"n_inter_frames" , required_argument, 0, 'f'},
 		{0                ,                 0, 0,   0},
 	};
 
 	int redraw_interval = 30;
     int width = 500, height = 500;
 	double line_thickness = 1;
+	double keyframe_seconds = 1;  // time between two contiguous keyframes in seconds
+	int n_inter_frames = 1;       // number of interpolating frames between two contiguous keyframes
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "i:w:h:t:", long_options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "i:w:h:t:k:f:", long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'i':
 			redraw_interval = atoi(optarg);
@@ -43,6 +47,12 @@ int main(int argc, char *argv[]) {
 		case 't':
 			line_thickness = atof(optarg);
 			break;
+		case 'k':
+			keyframe_seconds = atof(optarg);
+			break;
+		case 'f':
+			n_inter_frames = atoi(optarg);
+			break;
 		default:
 			std::cerr << "Read the code for usage." << std::endl;
 			exit(EXIT_FAILURE);
@@ -52,8 +62,8 @@ int main(int argc, char *argv[]) {
     // The Framebuffer storing the image rendered by the rasterizer
 	Eigen::Matrix<FrameBufferAttributes,Eigen::Dynamic,Eigen::Dynamic> frameBuffer(width, height);
 
-	// Global Constants (empty in this example)
-	UniformAttributes uniform;
+	// Global Constants
+	UniformAttributes uniform(1, n_inter_frames, 0);
 
 	// Basic rasterization program
 	Program program;
@@ -62,7 +72,7 @@ int main(int argc, char *argv[]) {
 	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
 		VertexAttributes new_va = va;
 		try {
-			new_va.position = uniform.triangles.at(va.obj_id).transform * new_va.position;
+			new_va.position = uniform.triangles.at(va.obj_id).transform_at_time(uniform.cur_t()) * new_va.position;
 		}
 		catch (const std::out_of_range& oor) {
 		}
@@ -125,7 +135,7 @@ int main(int argc, char *argv[]) {
 		case 'o':
 			if (selected_obj_id && moving_selected_obj) {
 				auto v = sdl_vector_to_position4(xrel, yrel);
-				triangles[selected_obj_id].append_transform(translation(v));
+				triangles[selected_obj_id].append_transform(translation(v), uniform.cur_keyframe_id());
 				viewer.redraw_next = true;
 			}
 			break;
@@ -195,7 +205,7 @@ int main(int argc, char *argv[]) {
 					Triangle& triangle = id_obj.second;
 					for (int i = 0; i < 3; i++) {
 						VertexAttributes& vertex = triangle.vas[i];
-						double cur_sqr_distance = sqr_distance(position, triangle.transform * vertex.position);
+						double cur_sqr_distance = sqr_distance(position, triangle.transform_at_time(uniform.cur_t()) * vertex.position);
 						if (cur_sqr_distance < nearest_sqr_distance) {
 							nearest_sqr_distance = cur_sqr_distance;
 							selected_vertex = &vertex;
@@ -242,12 +252,12 @@ int main(int argc, char *argv[]) {
 				Triangle& triangle = triangles[selected_obj_id];
 				Transform4 transform;
 				switch (key) {
-					case 'h': transform = rotation_xy(-10/180.*pi, triangle.barycenter()); break;
-					case 'j': transform = rotation_xy(+10/180.*pi, triangle.barycenter()); break;
-					case 'k': transform = scaling(1+0.25, triangle.barycenter()); break;
-					case 'l': transform = scaling(1-0.25, triangle.barycenter()); break;
+					case 'h': transform = rotation_xy(-10/180.*pi, triangle.barycenter(uniform.cur_keyframe_id())); break;
+					case 'j': transform = rotation_xy(+10/180.*pi, triangle.barycenter(uniform.cur_keyframe_id())); break;
+					case 'k': transform = scaling(1+0.25, triangle.barycenter(uniform.cur_keyframe_id())); break;
+					case 'l': transform = scaling(1-0.25, triangle.barycenter(uniform.cur_keyframe_id())); break;
 				}
-				triangle.append_transform(transform);
+				triangle.append_transform(transform, uniform.cur_keyframe_id());
 				viewer.redraw_next = true;
 			}
 			break;

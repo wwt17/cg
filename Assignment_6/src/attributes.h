@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <map>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -158,12 +159,12 @@ public:
 class Triangle {
 public:
 	VertexAttributes vas[3];
-	Transform4 transform;
+	std::vector<Transform4> transforms; // length of n_keyframes
 	Triangle() {
 	}
 	Triangle(const VertexAttributes _vas[3]) {
 		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
-		transform.setIdentity();
+		transforms.push_back(Transform4::Identity());
 	}
 	void selected() {
 		for (int i = 0; i < 3; i++) vas[i].color[3] = 0.5;
@@ -171,21 +172,35 @@ public:
 	void unselected() {
 		for (int i = 0; i < 3; i++) vas[i].color[3] = 1;
 	}
-	void append_transform(const Transform4& new_transform) {
+	void append_transform(const Transform4& new_transform, const int keyframe_id) {
+		Transform4 &transform = transforms[keyframe_id];
 		transform = new_transform * transform;
 	}
-	Position4 barycenter() const {
+	Position4 barycenter(const int keyframe_id) const {
 		Position4 S(0, 0, 0, 0);
 		for (int i = 0; i < 3; i++) S += normalize(vas[i].position);
-		return transform * (S / 3);
+		return transforms[keyframe_id] * (S / 3);
+	}
+	Transform4 transform_at_time(const double t) const {
+		return transforms[int(t)]; // TODO: implement interpolation
 	}
 };
 
 class UniformAttributes {
 public:
+	int n_keyframes;
+	int n_inter_frames;
+	int cur_frame_id;  // in [0, (n_keyframes - 1) * n_inter_frames]
 	std::map<int, Triangle> triangles;
 	Transform4 view_transform;
-	UniformAttributes() {
+	UniformAttributes(const int n_keyframes=1, const int n_inter_frames=1, const int cur_frame_id=0): n_keyframes(n_keyframes), n_inter_frames(n_inter_frames), cur_frame_id(cur_frame_id) {
 		view_transform.setIdentity();
+	}
+	int cur_keyframe_id() const {
+		return cur_frame_id / n_inter_frames;
+	}
+	double cur_t() const {
+		const int n_frames = (n_keyframes - 1) * n_inter_frames;
+		return n_frames ? cur_frame_id / double(n_frames) : 0.;
 	}
 };
