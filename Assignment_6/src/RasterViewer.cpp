@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     int width = 500, height = 500;
 	double line_thickness = 1;
 	double keyframe_seconds = 1;  // time between two contiguous keyframes in seconds
-	int n_inter_frames = 1;       // number of interpolating frames between two contiguous keyframes
+	int n_inter_frames = 5;       // number of interpolating frames between two contiguous keyframes
 
 	int opt;
 	while ((opt = getopt_long(argc, argv, "i:w:h:t:k:f:", long_options, NULL)) != -1) {
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
 	program.VertexShader = [](const VertexAttributes& va, const UniformAttributes& uniform) {
 		VertexAttributes new_va = va;
 		try {
-			new_va.position = uniform.triangles.at(va.obj_id).transform_at_time(uniform.cur_t()) * new_va.position;
+			new_va.position = uniform.triangles.at(va.obj_id).transform_at_time(uniform.cur_t(), uniform.interpolation) * new_va.position;
 		}
 		catch (const std::out_of_range& oor) {
 		}
@@ -103,8 +103,6 @@ int main(int argc, char *argv[]) {
 	for (int i = 0; i < 3; i++) new_vertices[i].color = Color(1, 1, 1, 1);
 	// mode
 	char mode = 'i';
-	// interpolation type
-	InterpolationType interpolation;
 
     // Initialize the viewer and the corresponding callbacks
     SDLViewer viewer;
@@ -158,7 +156,7 @@ int main(int argc, char *argv[]) {
 				new_vertices[n_new_vertices].position = position;
 				n_new_vertices++;
 				if (n_new_vertices == 3) {
-					triangles[new_obj_id++] = Triangle(new_vertices);
+					triangles[new_obj_id++] = Triangle(new_vertices, uniform.n_keyframes);
 					for (int i = 0; i < 3; i++) new_vertices[i].obj_id = new_obj_id;
 					n_new_vertices = 0;
 				}
@@ -207,7 +205,7 @@ int main(int argc, char *argv[]) {
 					Triangle& triangle = id_obj.second;
 					for (int i = 0; i < 3; i++) {
 						VertexAttributes& vertex = triangle.vas[i];
-						double cur_sqr_distance = sqr_distance(position, triangle.transform_at_time(uniform.cur_t()) * vertex.position);
+						double cur_sqr_distance = sqr_distance(position, triangle.transform_at_time(uniform.cur_t(), uniform.interpolation) * vertex.position);
 						if (cur_sqr_distance < nearest_sqr_distance) {
 							nearest_sqr_distance = cur_sqr_distance;
 							selected_vertex = &vertex;
@@ -288,7 +286,7 @@ int main(int argc, char *argv[]) {
 			break;
 		case ' ':  // play/advance the animation using linear interpolation
 		case '\t': // play/advance the animation using Bezier interpolation
-			interpolation = key == ' ' ? linear : bezier;
+			uniform.interpolation = key == ' ' ? linear : bezier;
 			if (++uniform.cur_frame_id > (uniform.n_keyframes - 1) * uniform.n_inter_frames)
 				uniform.cur_frame_id = 0; // jump to the first frame
 			viewer.redraw_next = true;

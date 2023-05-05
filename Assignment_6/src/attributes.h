@@ -166,9 +166,8 @@ public:
 	std::vector<Transform4> transforms; // length of n_keyframes
 	Triangle() {
 	}
-	Triangle(const VertexAttributes _vas[3]) {
+	Triangle(const VertexAttributes _vas[3], const int n_keyframes=1): transforms(std::vector<Transform4>(n_keyframes, Transform4::Identity())) {
 		for (int i = 0; i < 3; i++) vas[i] = _vas[i];
-		transforms.push_back(Transform4::Identity());
 	}
 	void selected() {
 		for (int i = 0; i < 3; i++) vas[i].color[3] = 0.5;
@@ -194,8 +193,34 @@ public:
 		for (int i = 0; i < 3; i++) S += normalize(vas[i].position);
 		return transforms[keyframe_id] * (S / 3);
 	}
-	Transform4 transform_at_time(const double t) const {
-		return transforms[int(t * (int(transforms.size()) - 1))]; // TODO: implement interpolation
+	Transform4 transform_at_time(const double t, const InterpolationType interpolation) const {
+		if (interpolation == linear) {
+			const double t_keyframes = t * (int(transforms.size()) - 1);
+			const int keyframe_id = int(t_keyframes + 1e-7);
+			const double t_inter_keyframe = t_keyframes - keyframe_id;
+			return (1 - t_inter_keyframe) * transforms[keyframe_id] + t_inter_keyframe * transforms[keyframe_id + 1];
+		}
+		else { // Bezier
+			const int n = transforms.size() - 1;
+			// c[i] = (n choose i)
+			double c[n+1];
+			c[0] = 1;
+			for (int i = 1; i * 2 <= n; i++) c[i] = c[i-1] * (n-i+1)/i;
+			for (int i = 0; i * 2 < n; i++) c[n-i] = c[i];
+			// p0[i] = t^i
+			double p0[n+1];
+			p0[0] = 1;
+			for (int i = 1; i <= n; i++) p0[i] = p0[i-1] * t;
+			// p1[i] = (1-t)^i
+			double p1[n+1];
+			p1[0] = 1;
+			for (int i = 1; i <= n; i++) p1[i] = p1[i-1] * (1-t);
+			// B(n,i) = (n choose i) * t^i * (1-t)^(n-i) = c[i] * p0[i] * p1[n-i]
+			// ans = sum_i B(n,i) * a(i)
+			Transform4 ans; ans.setZero();
+			for (int i = 0; i <= n; i++) ans += (c[i] * p0[i] * p1[n-i]) * transforms[i];
+			return ans;
+		}
 	}
 };
 
@@ -204,9 +229,10 @@ public:
 	int n_keyframes;
 	int n_inter_frames;
 	int cur_frame_id;  // in [0, (n_keyframes - 1) * n_inter_frames]
+	InterpolationType interpolation;
 	std::map<int, Triangle> triangles;
 	Transform4 view_transform;
-	UniformAttributes(const int n_keyframes=1, const int n_inter_frames=1, const int cur_frame_id=0): n_keyframes(n_keyframes), n_inter_frames(n_inter_frames), cur_frame_id(cur_frame_id) {
+	UniformAttributes(const int n_keyframes=1, const int n_inter_frames=1, const int cur_frame_id=0, const InterpolationType interpolation=linear): n_keyframes(n_keyframes), n_inter_frames(n_inter_frames), cur_frame_id(cur_frame_id), interpolation(interpolation) {
 		view_transform.setIdentity();
 	}
 	int cur_keyframe_id() const {
