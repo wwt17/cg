@@ -1,6 +1,8 @@
 Assignment #6
 ========================
 
+**The video recording is [illustration.mkv](illustration.mkv). Watch the video for illustration of all operations.**
+
 Use the same way to compile the code as suggested:
 
 ```bash
